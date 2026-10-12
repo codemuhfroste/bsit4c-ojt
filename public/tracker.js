@@ -1,10 +1,12 @@
-// Tracker: a spreadsheet-style grid for advisers and admins. One row per student, one column per requirement, so
-// missing work stands out at a glance. Header and student columns stay in view while scrolling.
+// Tracker: a spreadsheet-style grid for advisers and admins. One row per student, one column per required task, then
+// the exact names of the companies each student listed. It uses the whole screen, so missing work stands out at a
+// glance, and it mirrors the CSV export so what you see is what lands in Excel.
 import { api, avatar, h, icon } from "/common.js";
 
 const RANK = { todo: 0, rejected: 1, submitted: 2, approved: 3 }; // sorting puts the most urgent first
 const LABEL = { approved: "Done", submitted: "In review", rejected: "Needs changes", todo: "Missing", na: "N/A" };
 const GLYPH = { approved: "check", submitted: "clock", rejected: "alert", todo: "minus", na: "minus" };
+const CO_LABEL = { accepted: "Accepted", denied: "Denied", applied: "Applied, no reply yet", idle: "Not applied yet" };
 
 // Kept between visits to the tab, so the adviser returns to the view they left.
 const state = { q: "", filter: "all", sortKey: "name", dir: 1, showNa: false };
@@ -31,7 +33,11 @@ function ago(s) {
   return days < 14 ? `${days} d ago` : utc(s).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// Adds what the grid needs to each student: their status per requirement, what is missing, what awaits review.
+// How a company cell is shaded: accepted / denied / applied (waiting) / not applied yet.
+const coState = (c) =>
+  c.response === "accepted" ? "accepted" : c.response === "denied" ? "denied" : c.applied ? "applied" : "idle";
+
+// Adds what the grid needs to each student: status per requirement, what is missing, what awaits review.
 function derive(data) {
   const required = data.requirements.filter((r) => r.available && !r.optional);
   const statusFor = (stu, r) => (r.available ? (stu.cells[r.id]?.status ?? "todo") : "na");
@@ -41,39 +47,28 @@ function derive(data) {
     const done = required.filter((r) => statusFor(stu, r) === "approved").length;
     return { ...stu, missing, pending, done, complete: required.length > 0 && done === required.length };
   });
-  return { required, statusFor, students };
+  const slots = Math.max(1, ...students.map((s) => s.companyList.length));
+  return { required, statusFor, students, slots };
 }
 
-function columnsFor(data) {
+function columnsFor(data, info) {
+  // Optional tasks (the resume) are left out of the grid, like the CSV.
   const reqCols = data.requirements
-    .filter((r) => r.available || state.showNa)
-    .map((req) => ({
-      key: `r${req.id}`,
-      kind: "req",
-      req,
-      title: req.title,
-      sub: req.optional ? "optional" : req.available ? "" : "N/A for now",
-    }));
+    .filter((r) => !r.optional && (r.available || state.showNa))
+    .map((req) => ({ key: `r${req.id}`, kind: "req", req, title: req.title, sub: req.available ? "" : "N/A for now" }));
+  const companyCols = Array.from({ length: info.slots }, (_, i) => ({
+    key: `co${i}`,
+    kind: "company",
+    index: i,
+    title: `Company ${i + 1}`,
+  }));
   return [
     ...reqCols,
-    { key: "companies", kind: "num", title: "Companies", get: (s) => s.companies.total, warnZero: true },
-    { key: "applied", kind: "num", title: "Applied", get: (s) => s.companies.applied },
-    { key: "accepted", kind: "num", title: "Accepted", get: (s) => s.companies.accepted },
-    { key: "moa", kind: "num", title: "With MoA", get: (s) => s.companies.moa },
-    { key: "reviewed", kind: "num", title: "Companies approved", get: (s) => s.companies.approved },
+    ...companyCols,
     { key: "done", kind: "done", title: "Required done" },
     { key: "missing", kind: "missing", title: "Missing" },
     { key: "activity", kind: "time", title: "Last activity" },
   ];
-}
-
-function sortValue(col, stu) {
-  if (col === "name") return (stu.fullName || stu.email).toLowerCase();
-  if (col === "id") return stu.studentId || "";
-  if (col === "done") return stu.done;
-  if (col === "missing") return stu.missing.length;
-  if (col === "activity") return stu.lastActivity || "";
-  return null;
 }
 
 export async function trackerView() {
@@ -81,10 +76,9 @@ export async function trackerView() {
   let updatedAt = new Date();
 
   const root = h("div", { className: "tracker" });
-  const tiles = h("div", { className: "stats four" });
+  const summary = h("p", { className: "tracker-summary" });
   const toolbar = h("div", { className: "toolbar sheet-tools" });
   const legend = h("div", { className: "legend" });
-  const count = h("span", { className: "muted" });
   const stamp = h("span", { className: "muted" });
   const table = h("table", { className: "sheet", role: "grid", "aria-label": "Student requirements tracker" });
   const wrap = h("div", { className: "sheet-wrap", tabindex: "-1" }, table);
@@ -94,7 +88,13 @@ export async function trackerView() {
   function visibleRows(info, cols) {
     const q = state.q.trim().toLowerCase();
     const rows = info.students.filter((s) => {
-      if (q && ![s.fullName, s.studentId, s.email].some((v) => v?.toLowerCase().includes(q))) return false;
+      if (
+        q &&
+        ![s.fullName, s.studentId, s.email, ...s.companyList.map((c) => c.name)].some((v) =>
+          v?.toLowerCase().includes(q),
+        )
+      )
+        return false;
       if (state.filter === "missing") return s.missing.length > 0;
       if (state.filter === "pending") return s.pending > 0;
       if (state.filter === "complete") return s.complete;
@@ -103,10 +103,13 @@ export async function trackerView() {
     });
     const col = cols.find((c) => c.key === state.sortKey);
     const value = (s) => {
-      if (state.sortKey === "name" || state.sortKey === "id") return sortValue(state.sortKey, s);
+      if (state.sortKey === "name") return (s.fullName || s.email).toLowerCase();
       if (col?.kind === "req") return RANK[info.statusFor(s, col.req)] ?? 9;
-      if (col?.kind === "num") return col.get(s);
-      return sortValue(state.sortKey, s);
+      if (col?.kind === "company") return s.companyList[col.index]?.name.toLowerCase() ?? "￿"; // blanks sort last
+      if (state.sortKey === "done") return s.done;
+      if (state.sortKey === "missing") return s.missing.length;
+      if (state.sortKey === "activity") return s.lastActivity || "";
+      return "";
     };
     return rows.sort((a, b) => {
       const x = value(a);
@@ -137,32 +140,44 @@ export async function trackerView() {
 
   function statusCell(info, stu, col, r, c) {
     const status = info.statusFor(stu, col.req);
-    const optionalTodo = col.req.optional && status === "todo";
-    const label = optionalTodo ? "—" : LABEL[status];
-    const td = h(
+    const who = stu.fullName || stu.email;
+    return h(
       "td",
       {
-        className: `cell ${optionalTodo ? "optional" : status}`,
+        className: `cell ${status}`,
         tabindex: "-1",
         "data-r": r,
         "data-c": c,
-        title: `${stu.fullName || stu.email} · ${col.title}: ${optionalTodo ? "Not submitted (optional)" : LABEL[status]}`,
-        "aria-label": `${stu.fullName || stu.email}, ${col.title}: ${optionalTodo ? "not submitted, optional" : LABEL[status]}`,
+        title: `${who} · ${col.title}: ${LABEL[status]}`,
+        "aria-label": `${who}, ${col.title}: ${LABEL[status]}`,
       },
-      !optionalTodo && icon(GLYPH[status], 13),
-      label,
+      icon(GLYPH[status], 13),
+      LABEL[status],
     );
-    return td;
   }
 
   function otherCell(stu, col, r, c, info) {
     const base = { tabindex: "-1", "data-r": r, "data-c": c };
-    if (col.kind === "num") {
-      const value = col.get(stu);
+    if (col.kind === "company") {
+      const co = stu.companyList[col.index];
+      if (!co)
+        return h("td", {
+          ...base,
+          className: "cell co blank",
+          "aria-label": `${stu.fullName || stu.email}, ${col.title}: none`,
+        });
+      const shade = coState(co);
+      const place = co.location === "inside" ? "Inside Legazpi" : "Outside Legazpi";
       return h(
         "td",
-        { ...base, className: `cell num${col.warnZero && value === 0 ? " warn" : ""}${value === 0 ? " zero" : ""}` },
-        String(value),
+        {
+          ...base,
+          className: `cell co ${shade}`,
+          title: `${co.name} · ${place} · ${CO_LABEL[shade]}${co.moa ? " · MoA with BU" : ""}`,
+          "aria-label": `${stu.fullName || stu.email}, ${col.title}: ${co.name}, ${place}, ${CO_LABEL[shade]}${co.moa ? ", MoA with BU" : ""}`,
+        },
+        co.moa && icon("shield", 12),
+        co.name,
       );
     }
     if (col.kind === "done") {
@@ -207,7 +222,7 @@ export async function trackerView() {
           h(
             "div",
             { className: "who" },
-            avatar(stu.fullName, stu.email, 28),
+            avatar(stu.fullName, stu.email, 26),
             h(
               "div",
               {},
@@ -239,7 +254,7 @@ export async function trackerView() {
           const st = info.statusFor(s, col.req);
           if (st === "approved") tally.approved++;
           else if (st === "submitted") tally.submitted++;
-          else if (st !== "na" && !(col.req.optional && st === "todo")) tally.missing++;
+          else if (st !== "na") tally.missing++;
         }
         const total = rows.length || 1;
         tr.append(
@@ -259,8 +274,10 @@ export async function trackerView() {
             ),
           ),
         );
-      } else if (col.kind === "num") {
-        tr.append(h("td", { className: "cell num total" }, String(rows.reduce((sum, s) => sum + col.get(s), 0))));
+      } else if (col.kind === "company") {
+        tr.append(
+          h("td", { className: "cell total" }, `${rows.filter((s) => s.companyList[col.index]).length} listed`),
+        );
       } else if (col.kind === "done") {
         tr.append(h("td", { className: "cell total" }, `${rows.filter((s) => s.complete).length} complete`));
       } else if (col.kind === "missing") {
@@ -274,7 +291,7 @@ export async function trackerView() {
 
   function paint() {
     const info = derive(data);
-    const cols = columnsFor(data);
+    const cols = columnsFor(data, info);
     const rows = visibleRows(info, cols);
 
     // keep the keyboard position through a repaint
@@ -328,43 +345,10 @@ export async function trackerView() {
     if (first) first.tabIndex = 0;
     if (keep) table.querySelector(`td[data-r="${keep[0]}"][data-c="${keep[1]}"]`)?.focus({ preventScroll: true });
 
-    count.textContent = `${rows.length} of ${info.students.length} students`;
     stamp.textContent = `Updated ${updatedAt.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-    paintTiles(info);
+    const all = info.students;
+    summary.textContent = `${rows.length === all.length ? all.length : `${rows.length} of ${all.length}`} students · ${all.filter((s) => s.complete).length} complete · ${all.filter((s) => s.missing.length).length} missing required work · ${all.filter((s) => s.pending > 0).length} waiting for review`;
     paintToolbar(info);
-  }
-
-  function paintTiles(info) {
-    const tile = (label, value, note, cls = "") =>
-      h(
-        "div",
-        { className: `stat ${cls}` },
-        h("small", { className: "muted" }, label),
-        h("div", { className: "num" }, String(value)),
-        note && h("small", { className: "muted" }, note),
-      );
-    const total = info.students.length;
-    tiles.replaceChildren(
-      tile("Students", total, `${info.required.length} required task${info.required.length === 1 ? "" : "s"}`),
-      tile(
-        "All required done",
-        info.students.filter((s) => s.complete).length,
-        total ? `${Math.round((info.students.filter((s) => s.complete).length / total) * 100)}% of the class` : "",
-        "good",
-      ),
-      tile(
-        "Missing required work",
-        info.students.filter((s) => s.missing.length).length,
-        "need to submit or fix",
-        "bad",
-      ),
-      tile(
-        "Waiting for review",
-        info.students.filter((s) => s.pending > 0).length,
-        "submitted, not reviewed yet",
-        "wait",
-      ),
-    );
   }
 
   function paintToolbar(info) {
@@ -409,7 +393,6 @@ export async function trackerView() {
         "Show N/A tasks",
       ),
       h("span", { className: "grow" }),
-      stamp,
       h(
         "button",
         { type: "button", className: "btn outline sm", onclick: (e) => reload(e.currentTarget) },
@@ -418,17 +401,22 @@ export async function trackerView() {
       ),
       h(
         "a",
-        { className: "btn outline sm", href: "/api/admin/export/progress.csv", download: "" },
+        {
+          className: "btn outline sm",
+          href: "/api/admin/export/progress.csv",
+          download: "",
+          title: "Same layout as this grid, ready for Excel",
+        },
         icon("download", 15),
-        "Export CSV",
+        "Export to Excel (CSV)",
       ),
     );
   }
 
   const search = h("input", {
     type: "search",
-    placeholder: "Search name, ID or email",
-    "aria-label": "Search students",
+    placeholder: "Search student, ID, email or company",
+    "aria-label": "Search students or companies",
     value: state.q,
     oninput: (e) => {
       state.q = e.target.value;
@@ -487,31 +475,15 @@ export async function trackerView() {
     ...["approved", "submitted", "rejected", "todo"].map((s) =>
       h("span", { className: `legend-item ${s}` }, icon(GLYPH[s], 12), LABEL[s]),
     ),
-    h("span", { className: "legend-item na" }, "N/A"),
-    h(
-      "span",
-      { className: "muted hint" },
-      "Click a cell to select, double-click or press Enter to open the student. Arrow keys move around.",
+    h("span", { className: "legend-sep" }),
+    ...["accepted", "applied", "denied", "idle"].map((s) =>
+      h("span", { className: `legend-item co ${s}` }, CO_LABEL[s]),
     ),
+    h("span", { className: "legend-item co-moa" }, icon("shield", 12), "MoA with BU"),
+    h("span", { className: "muted hint" }, "Enter or double-click opens a student"),
   );
 
-  root.append(
-    h(
-      "div",
-      { className: "page-head" },
-      h(
-        "div",
-        {},
-        h("h1", {}, "Tracker"),
-        h("p", {}, "Every student against every requirement. Red means something is missing."),
-      ),
-      count,
-    ),
-    tiles,
-    toolbar,
-    legend,
-    wrap,
-  );
+  root.append(h("div", { className: "tracker-head" }, h("h1", {}, "Tracker"), summary, stamp), toolbar, legend, wrap);
   paint();
 
   // Quietly refresh every minute while this tab is open and visible.

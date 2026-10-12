@@ -2168,6 +2168,7 @@ async function render({ background = false } = {}) {
   const available = TABS.filter((t) => !t.show || t.show());
   if (!available.some((t) => t.id === active)) active = "checklist";
   paintTabs(available);
+  view.classList.toggle("wide", active === "tracker"); // the grid uses the whole screen
   const token = ++renderToken;
   const scrollY = window.scrollY;
   try {

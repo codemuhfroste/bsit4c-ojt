@@ -54,15 +54,18 @@ has an **Optional** checkbox for tasks that should not count toward progress.
   applied, response), and Approve / Reject with a note right there.
 - **Review tab** – the queue across all students. Filter by Needs review / Rejected / Approved / All, and search by
   student, ID or requirement. Click a student's name to jump to their page.
-- **Tracker tab** – a spreadsheet-style grid for monitoring the whole class: one row per student, one column per
-  requirement, with row numbers and column letters. Cells are colour-coded (**Done**, **In review**,
-  **Needs changes**, hatched red **Missing**, hatched grey **N/A**), and company numbers (companies, applied, accepted,
-  with MoA, approved) sit beside them, followed by **Required done**, a **Missing** column that names what each
-  student still has to do, and **Last activity**. The header, row numbers and student column stay in view while you
-  scroll, and a totals row is pinned at the bottom. Click a header to sort (the most urgent first), filter by _Has
-  missing work / Waiting for review / Complete / Unverified email_, search by name, ID or email, tick **Show N/A tasks**
-  to include the closed requirements, and **Export CSV**. Use the arrow keys to move between cells; double-click or
-  press Enter to open the student. It refreshes itself every minute.
+- **Tracker tab** – a full-screen, spreadsheet-style grid for monitoring the whole class: one row per student, with
+  row numbers and column letters. Columns are the required tasks (colour-coded **Done**, **In review**,
+  **Needs changes**, hatched red **Missing**), then **Company 1, Company 2, …** holding the **exact company names**
+  each student listed (shaded by outcome: accepted, applied, denied, not applied yet; a shield marks a company with a
+  MoA), then **Required done**, a **Missing** column naming what each student still has to do, and **Last activity**.
+  Optional tasks such as the resume are not shown. The header, row numbers and student column stay in view while you
+  scroll, and a totals row is pinned at the bottom. Click a header to sort (most urgent first, or company names
+  A–Z), filter by _Has missing work / Waiting for review / Complete / Unverified email_, search by student, ID, email
+  **or company name**, and tick **Show N/A tasks** to include the closed requirements. **Export to Excel (CSV)**
+  downloads exactly this layout (Name, Student ID, Email, task statuses, Required approved, Company 1…N), so the
+  sheet in Excel matches the grid. Arrow keys move between cells; Enter or double-click opens the student. It
+  refreshes itself every minute.
 - **Per-company review** – on the Review tab and on a student's page, every company has its own note box and
   **Approve / Reject** buttons (a rejection needs a reason). Students see the result and the note on that company.
   Editing a company's name, link or email sends it back to "Not reviewed"; ticking Applied or Response does not.

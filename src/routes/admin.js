@@ -65,7 +65,7 @@ router.delete("/requirements/:id", requireRole("admin"), async (req, res) => {
 
 // ---- Students and review (adviser + admin) ----
 
-// The monitoring grid: one row per student, one cell per requirement, plus their company-list numbers.
+// The monitoring grid: one row per student, one cell per requirement, and the companies each student listed.
 router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
   const { rows: reqs } = await db.execute(
     "SELECT id, title, phase, kind, available, optional FROM requirements ORDER BY sort_order, id",
@@ -74,20 +74,21 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
     "SELECT id, full_name, student_id, email, email_verified_at, created_at FROM users WHERE role = 'student' ORDER BY full_name, email",
   );
   const { rows: subs } = await db.execute("SELECT id, user_id, requirement_id, status, updated_at FROM submissions");
-  const { rows: comps } = await db.execute(`
-    SELECT user_id, COUNT(*) AS total, SUM(applied) AS applied, SUM(response = 'accepted') AS accepted,
-           SUM(review = 'approved') AS approved, SUM(review = 'rejected') AS rejected, SUM(moa) AS moa,
-           SUM(location = 'inside') AS inside, MAX(created_at) AS last
-    FROM companies GROUP BY user_id`);
+  const { rows: comps } = await db.execute(
+    "SELECT user_id, name, location, applied, response, moa, review, created_at FROM companies ORDER BY id",
+  );
 
-  const subsBy = new Map();
-  for (const sub of subs) {
-    const key = Number(sub.user_id);
-    if (!subsBy.has(key)) subsBy.set(key, []);
-    subsBy.get(key).push(sub);
-  }
-  const compBy = new Map(comps.map((c) => [Number(c.user_id), c]));
-  const n = (v) => Number(v ?? 0);
+  const group = (rows) => {
+    const map = new Map();
+    for (const row of rows) {
+      const key = Number(row.user_id);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    }
+    return map;
+  };
+  const subsBy = group(subs);
+  const compBy = group(comps);
 
   res.json({
     requirements: reqs.map((r) => ({
@@ -100,8 +101,8 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
     })),
     students: students.map((u) => {
       const mine = subsBy.get(Number(u.id)) ?? [];
-      const c = compBy.get(Number(u.id));
-      const stamps = [u.created_at, c?.last, ...mine.map((x) => x.updated_at)].filter(Boolean);
+      const list = compBy.get(Number(u.id)) ?? [];
+      const stamps = [u.created_at, ...list.map((c) => c.created_at), ...mine.map((x) => x.updated_at)].filter(Boolean);
       return {
         id: Number(u.id),
         fullName: u.full_name,
@@ -109,14 +110,23 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
         email: u.email,
         emailVerified: Boolean(u.email_verified_at),
         cells: Object.fromEntries(mine.map((x) => [Number(x.requirement_id), { status: x.status, id: Number(x.id) }])),
+        // The exact names, in the order the student added them (this is what the grid and its CSV show).
+        companyList: list.map((c) => ({
+          name: c.name,
+          location: c.location,
+          applied: Boolean(c.applied),
+          response: c.response,
+          moa: Boolean(c.moa),
+          review: c.review,
+        })),
         companies: {
-          total: n(c?.total),
-          applied: n(c?.applied),
-          accepted: n(c?.accepted),
-          approved: n(c?.approved),
-          rejected: n(c?.rejected),
-          moa: n(c?.moa),
-          inside: n(c?.inside),
+          total: list.length,
+          applied: list.filter((c) => c.applied).length,
+          accepted: list.filter((c) => c.response === "accepted").length,
+          approved: list.filter((c) => c.review === "approved").length,
+          rejected: list.filter((c) => c.review === "rejected").length,
+          moa: list.filter((c) => c.moa).length,
+          inside: list.filter((c) => c.location === "inside").length,
         },
         lastActivity: stamps.sort().at(-1),
       };
@@ -253,47 +263,46 @@ function sendCsv(res, name, table) {
 
 const STATUS_LABEL = { approved: "Approved", submitted: "In review", rejected: "Needs changes" };
 
-// One row per student: a status column for every open requirement, then the progress numbers.
+// Same layout as the Tracker grid, ready for Excel: one row per student, a status column for every open required
+// requirement, then Company 1, Company 2, ... holding the exact company names. Optional tasks are left out.
 router.get("/export/progress.csv", requireRole(...STAFF), async (_req, res) => {
   const { rows: reqs } = await db.execute(
-    "SELECT id, title, optional FROM requirements WHERE available = 1 ORDER BY sort_order, id",
+    "SELECT id, title FROM requirements WHERE available = 1 AND optional = 0 ORDER BY sort_order, id",
   );
   const { rows: students } = await db.execute("SELECT * FROM users WHERE role = 'student' ORDER BY full_name, email");
   const { rows: subs } = await db.execute("SELECT user_id, requirement_id, status FROM submissions");
-  const { rows: comps } = await db.execute("SELECT user_id, applied, response, review, moa FROM companies");
+  const { rows: comps } = await db.execute("SELECT user_id, name FROM companies ORDER BY id");
 
   const status = new Map(subs.map((s) => [`${s.user_id}:${s.requirement_id}`, s.status]));
-  const required = reqs.filter((r) => !r.optional);
+  const namesBy = new Map();
+  for (const c of comps) {
+    const key = Number(c.user_id);
+    namesBy.set(key, [...(namesBy.get(key) ?? []), c.name]);
+  }
+  const slots = Math.max(1, ...students.map((u) => (namesBy.get(Number(u.id)) ?? []).length));
+
   const table = [
     [
       "Name",
       "Student ID",
       "Email",
       "Email verified",
-      ...reqs.map((r) => (r.optional ? `${r.title} (optional)` : r.title)),
+      ...reqs.map((r) => r.title),
       "Required approved",
-      "Companies listed",
-      "Applied",
-      "Accepted",
-      "Companies approved",
-      "With MoA",
+      ...Array.from({ length: slots }, (_, i) => `Company ${i + 1}`),
     ],
   ];
   for (const u of students) {
-    const mine = comps.filter((c) => Number(c.user_id) === Number(u.id));
-    const approved = required.filter((r) => status.get(`${u.id}:${r.id}`) === "approved").length;
+    const approved = reqs.filter((r) => status.get(`${u.id}:${r.id}`) === "approved").length;
+    const names = namesBy.get(Number(u.id)) ?? [];
     table.push([
       u.full_name,
       u.student_id,
       u.email,
       u.email_verified_at ? "Yes" : "No",
       ...reqs.map((r) => STATUS_LABEL[status.get(`${u.id}:${r.id}`)] ?? "To do"),
-      `${approved}/${required.length}`,
-      mine.length,
-      mine.filter((c) => c.applied).length,
-      mine.filter((c) => c.response === "accepted").length,
-      mine.filter((c) => c.review === "approved").length,
-      mine.filter((c) => c.moa).length,
+      `${approved}/${reqs.length}`,
+      ...Array.from({ length: slots }, (_, i) => names[i] ?? ""),
     ]);
   }
   sendCsv(res, "ojt-progress", table);

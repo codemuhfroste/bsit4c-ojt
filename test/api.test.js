@@ -609,11 +609,13 @@ describe("current tasks", () => {
 
     const progress = await text("/api/admin/export/progress.csv");
     assert.ok(
-      progress.startsWith("\uFEFFName,Student ID,Email,Email verified,Find OJT companies,Resume / CV (optional)"),
+      progress.startsWith("\uFEFFName,Student ID,Email,Email verified,Find OJT companies,Required approved,Company 1"),
+      progress.split("\r\n")[0],
     );
+    assert.ok(!progress.split("\r\n")[0].includes("Resume"), "optional tasks are not in the export");
     const row = progress.split("\r\n").find((l) => l.includes("csv@example.com"));
     assert.match(row, /^"'=HYPERLINK/); // formula neutralised (and quoted, since it contains quotes)
-    assert.match(row, /In review,To do,0\/1,1,0,0,0,0$/);
+    assert.match(row, /,In review,0\/1,"Acme, ""The"" Co"/); // status, progress, then the exact company name
 
     const companies = await text("/api/admin/export/companies.csv");
     const line = companies.split("\r\n").find((l) => l.includes("csv@example.com"));
@@ -822,9 +824,42 @@ describe("current tasks", () => {
     const z = by["grid-nothing@example.com"];
     assert.deepEqual(z.cells, {});
     assert.equal(z.companies.total, 0);
+    assert.deepEqual(z.companyList, []);
+    assert.deepEqual(
+      a.companyList.map((c) => [c.name, c.applied, c.response]),
+      [["Done Co", true, "accepted"]],
+    );
+    assert.deepEqual(
+      w.companyList.map((c) => [c.name, c.location]),
+      [
+        ["Wait Co", "outside"],
+        ["Wait Co 2", "inside"],
+      ],
+    ); // exact names, in the order they were added
     assert.equal(z.emailVerified, false);
     assert.ok(a.lastActivity && z.lastActivity, "everyone has a last-activity time (at least their signup)");
     assert.ok(!JSON.stringify(body).match(/password|hash/i), "nothing sensitive in the grid data");
+  });
+
+  test("progress export is the grid in Excel form: exact company names in Company 1..N", async () => {
+    const admin = await adminClient();
+    const c = await registerAndVerify("excel@example.com");
+    await c("PATCH", "/api/me", { json: { fullName: "Excel Student", studentId: "2023-42" } });
+    for (const name of ["Acme Software Inc.", "Beta, Digital & Co", "Gamma Labs"]) {
+      await c("POST", "/api/companies", { json: { name, link: "x.example.com", email: "N/A", location: "inside" } });
+    }
+    const res = await admin("GET", "/api/admin/export/progress.csv");
+    const lines = Buffer.from(res.body).toString("utf8").split("\r\n");
+    const header = lines[0].replace("\uFEFF", "").split(",");
+    const slots = header.filter((h) => /^Company \d+$/.test(h));
+    assert.ok(slots.length >= 3, "one column per company slot, as many as the busiest student needs");
+    assert.deepEqual(
+      slots,
+      slots.map((_, i) => `Company ${i + 1}`),
+    );
+    assert.ok(!header.some((h) => /optional|Resume/i.test(h)));
+    const row = lines.find((l) => l.includes("excel@example.com"));
+    assert.ok(row.includes('Acme Software Inc.,"Beta, Digital & Co",Gamma Labs'), row); // names only, in order, quoted when needed
   });
 
   test("emptying the company list puts the task back to to-do", async () => {

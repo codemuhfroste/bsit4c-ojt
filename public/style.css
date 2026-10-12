@@ -2368,3 +2368,111 @@ table.sheet {
   text-align: center;
   color: var(--muted);
 }
+
+/* ---------- Tracker: full width, compact chrome, company names ---------- */
+.container.wide {
+  max-width: none;
+  padding: 10px 14px 6px;
+}
+.tracker {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 64px - 18px);
+  min-height: 420px;
+}
+@media (max-width: 860px) {
+  .tracker {
+    height: calc(100dvh - 64px - 50px - 18px);
+  }
+}
+.tracker-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 16px;
+  margin-bottom: 8px;
+}
+.tracker-head h1 {
+  font-size: 1.15rem;
+}
+.tracker-summary {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.tracker .toolbar {
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tracker .toolbar input[type="search"] {
+  max-width: 270px;
+  padding: 7px 10px;
+}
+.tracker .legend {
+  margin-bottom: 6px;
+}
+.tracker .sheet-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+.legend-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--border-strong);
+}
+.legend-item.co.accepted {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.legend-item.co.applied {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.legend-item.co.denied {
+  color: var(--err);
+  background: var(--err-soft);
+}
+.legend-item.co.idle {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+}
+.legend-item.co-moa {
+  color: var(--primary-ink);
+  background: var(--primary-soft);
+}
+.sheet td.co {
+  min-width: 170px;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sheet td.co svg.icon {
+  margin-right: 5px;
+  color: var(--primary-ink);
+}
+.sheet td.co.accepted {
+  font-weight: 600;
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.sheet td.co.applied {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.sheet td.co.denied {
+  color: var(--err);
+  background: var(--err-soft);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.sheet td.co.blank {
+  background: var(--surface);
+}
+
+.tracker-head .muted {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
