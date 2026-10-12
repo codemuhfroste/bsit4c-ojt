@@ -35,13 +35,17 @@ async function getUserById(id) {
   return rows[0];
 }
 
-// ADMIN_EMAILS lists addresses that are always admins (bootstraps the first admin).
-async function applyAdminEmail(row) {
-  if (row.role !== "admin" && adminEmails().has(row.email)) {
-    await db.execute({ sql: "UPDATE users SET role = 'admin' WHERE id = ?", args: [row.id] });
-    return { ...row, role: "admin" };
+// ADMIN_EMAILS lists addresses that are admins, but only once the address has been verified. Without that check,
+// anyone could register a listed address before its owner does and claim admin.
+async function grantAdminIfListed(userId) {
+  const { rows } = await db.execute({
+    sql: "SELECT email, role, email_verified_at FROM users WHERE id = ?",
+    args: [userId],
+  });
+  const user = rows[0];
+  if (user && user.role !== "admin" && user.email_verified_at && adminEmails().has(user.email)) {
+    await db.execute({ sql: "UPDATE users SET role = 'admin' WHERE id = ?", args: [userId] });
   }
-  return row;
 }
 
 router.post("/register", limiter(20), async (req, res) => {
@@ -56,7 +60,7 @@ router.post("/register", limiter(20), async (req, res) => {
     const result = await db.execute({
       sql: `INSERT INTO users (email, password_hash, role, full_name, student_id)
             VALUES (?, ?, ?, ?, ?)`,
-      args: [email, hash, adminEmails().has(email) ? "admin" : "student", fullName, studentId],
+      args: [email, hash, "student", fullName, studentId],
     });
     id = Number(result.lastInsertRowid);
   } catch (err) {
@@ -80,9 +84,9 @@ router.post("/login", limiter(20), async (req, res) => {
   const ok = await bcrypt.compare(password, rows[0]?.password_hash ?? DUMMY_HASH);
   if (!rows[0] || !ok) throw new HttpError(401, "Wrong email or password.");
 
-  const user = await applyAdminEmail(rows[0]);
-  await startSession(res, user.id);
-  res.json({ ok: true, user: publicUser(user) });
+  await grantAdminIfListed(rows[0].id); // covers an admin address that was verified before it was listed
+  await startSession(res, rows[0].id);
+  res.json({ ok: true, user: publicUser(await getUserById(rows[0].id)) });
 });
 
 router.post("/logout", async (req, res) => {
@@ -121,6 +125,7 @@ router.post("/verify", limiter(30), async (req, res) => {
     sql: "UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ?",
     args: [new Date().toISOString(), userId],
   });
+  await grantAdminIfListed(userId);
   res.json({ ok: true });
 });
 
@@ -134,7 +139,14 @@ router.post("/verify/resend", requireAuth, limiter(5), async (req, res) => {
 router.post("/password/forgot", limiter(5), async (req, res) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   const { rows } = await db.execute({ sql: "SELECT id FROM users WHERE email = ?", args: [email] });
-  if (rows[0]) await sendPasswordReset(email, await issueToken(Number(rows[0].id), "reset", HOUR));
+  if (rows[0]) {
+    // A mail failure must not change the answer, or the endpoint would reveal which emails have accounts.
+    try {
+      await sendPasswordReset(email, await issueToken(Number(rows[0].id), "reset", HOUR));
+    } catch (err) {
+      console.error("[mail] reset email failed:", err.message);
+    }
+  }
   res.json({ ok: true });
 });
 
@@ -149,6 +161,7 @@ router.post("/password/reset", limiter(10), async (req, res) => {
     sql: "UPDATE users SET password_hash = ?, email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ?",
     args: [hash, new Date().toISOString(), userId],
   });
+  await grantAdminIfListed(userId);
   await endAllSessions(userId);
   res.json({ ok: true });
 });

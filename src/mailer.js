@@ -32,13 +32,13 @@ export async function sendMail({ to, subject, text }) {
 export const sendVerification = (email, token) =>
   sendMail({
     to: email,
-    subject: "Verify your email",
+    subject: "Verify your email · BSIT 4C OJT Checklist",
     text: `Confirm your email for the BSIT 4C OJT Checklist:\n\n${appUrl()}/?verify=${token}\n\nThis link expires in 24 hours.`,
   });
 
 export const sendPasswordReset = (email, token) =>
   sendMail({
     to: email,
-    subject: "Reset your password",
+    subject: "Reset your password · BSIT 4C OJT Checklist",
     text: `Reset your BSIT 4C OJT Checklist password:\n\n${appUrl()}/?reset=${token}\n\nThis link expires in 1 hour. If you did not ask for this, ignore this email.`,
   });

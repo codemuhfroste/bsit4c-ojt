@@ -1,6 +1,7 @@
 import { HttpError } from "./auth.js";
 
-export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Conservative on purpose: no ? & % < > " , ; : so an address cannot carry mailto: parameters or markup.
+export const EMAIL_RE = /^[A-Za-z0-9._+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 export const MIN_PASSWORD = 8;
 export const MAX_PASSWORD = 72; // bcrypt ignores bytes past 72
 

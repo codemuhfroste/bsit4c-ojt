@@ -60,7 +60,13 @@ let adminSession;
 async function adminClient() {
   if (!adminSession) {
     adminSession = client();
-    await adminSession("POST", "/api/login", { json: { email: "admin@example.com", password: PASSWORD } });
+    const login = () =>
+      adminSession("POST", "/api/login", { json: { email: "admin@example.com", password: PASSWORD } });
+    if ((await login()).status === 401) {
+      // not registered yet (this file run in isolation): create and verify it, then log in
+      adminSession = await registerAndVerify("admin@example.com");
+      await login();
+    }
   }
   return adminSession;
 }
@@ -137,10 +143,31 @@ describe("registration and login", () => {
     assert.equal(res.status, 403);
   });
 
-  test("ADMIN_EMAILS grants admin", async () => {
-    const c = client();
-    const reg = await c("POST", "/api/register", { json: { email: "admin@example.com", password: PASSWORD } });
-    assert.equal(reg.body.user.role, "admin");
+  test("ADMIN_EMAILS grants admin only after the address is verified", async () => {
+    // Someone registering a listed address without owning it must not become admin or see student data.
+    const squatter = client();
+    const reg = await squatter("POST", "/api/register", { json: { email: "admin@example.com", password: PASSWORD } });
+    assert.equal(reg.body.user.role, "student");
+    assert.equal(reg.body.user.emailVerified, false);
+    assert.equal((await squatter("GET", "/api/admin/users")).status, 403);
+    assert.equal((await squatter("GET", "/api/admin/export/companies.csv")).status, 403);
+    const login = await client()("POST", "/api/login", { json: { email: "admin@example.com", password: PASSWORD } });
+    assert.equal(login.body.user.role, "student"); // logging in does not promote an unverified address either
+
+    // The real owner proves the address by following the emailed link.
+    await squatter("POST", "/api/verify", { json: { token: lastMailToken("admin@example.com", "verify") } });
+    assert.equal((await squatter("GET", "/api/me")).body.user.role, "admin");
+    assert.equal((await squatter("GET", "/api/admin/users")).status, 200);
+  });
+
+  test("an admin email is also promoted when its owner resets the password", async () => {
+    const email = "admin@example.com";
+    const owner = client();
+    await owner("POST", "/api/password/forgot", { json: { email } });
+    const token = lastMailToken(email, "reset");
+    assert.equal((await owner("POST", "/api/password/reset", { json: { token, password: PASSWORD } })).status, 200);
+    const login = await client()("POST", "/api/login", { json: { email, password: PASSWORD } });
+    assert.equal(login.body.user.role, "admin");
   });
 });
 
@@ -659,6 +686,62 @@ describe("current tasks", () => {
     );
   });
 
+  test("company emails cannot carry mailto parameters or markup", async () => {
+    const c = await registerAndVerify("mailto@example.com");
+    const post = (email) =>
+      c("POST", "/api/companies", { json: { name: "Co", link: "co.example.com", email, location: "inside" } });
+    for (const bad of [
+      "x@y.co?cc=attacker%40evil.com",
+      "x@y.co?subject=hi",
+      "a&b@y.co",
+      "<b>@y.co",
+      '"quoted"@y.co',
+      "x@y.co,z@y.co",
+      "x@y",
+    ]) {
+      assert.equal((await post(bad)).status, 400, `should reject ${bad}`);
+    }
+    for (const good of ["hr@acme.example.com", "first.last+ojt@school.edu.ph", "o'brien@co-op.example.com", "N/A"]) {
+      assert.equal((await post(good)).status, 201, `should accept ${good}`);
+    }
+  });
+
+  test("the company list task cannot be deleted, only closed", async () => {
+    const admin = await adminClient();
+    assert.equal((await admin("DELETE", `/api/admin/requirements/${COMPANIES}`)).status, 400);
+    const items = (await admin("GET", "/api/requirements")).body.items;
+    assert.ok(items.some((i) => i.id === COMPANIES)); // still there
+  });
+
+  test("emptying an approved company list removes the approval too", async () => {
+    const student = await registerAndVerify("approvedempty@example.com");
+    const admin = await adminClient();
+    const made = await student("POST", "/api/companies", {
+      json: { name: "Only Co", link: "only.example.com", email: "N/A", location: "inside" },
+    });
+    const sub = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission;
+    await admin("POST", `/api/admin/submissions/${sub.id}/review`, { json: { status: "approved" } });
+    assert.equal((await student("DELETE", `/api/companies/${made.body.id}`)).status, 200);
+    const after = (await student("GET", "/api/requirements")).body;
+    assert.equal(after.items.find((i) => i.id === COMPANIES).submission, null);
+    assert.equal(after.progress.approved, 0); // no "Done" with nothing in it
+  });
+
+  test("student list counts submissions awaiting review, not rejected ones", async () => {
+    const student = await registerAndVerify("counts@example.com");
+    const admin = await adminClient();
+    await student("POST", "/api/companies", {
+      json: { name: "Count Co", link: "count.example.com", email: "N/A", location: "inside" },
+    });
+    const find = async () =>
+      (await admin("GET", "/api/admin/users")).body.users.find((u) => u.email === "counts@example.com");
+    assert.equal((await find()).inReview, 1);
+    const sub = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission;
+    await admin("POST", `/api/admin/submissions/${sub.id}/review`, { json: { status: "rejected", note: "no" } });
+    const row = await find();
+    assert.deepEqual([row.inReview, row.submitted, row.approved], [0, 1, 0]);
+  });
+
   test("emptying the company list puts the task back to to-do", async () => {
     const c = await registerAndVerify("empties@example.com");
     const { body } = await c("POST", "/api/companies", {
@@ -688,5 +771,85 @@ describe("current tasks", () => {
       (await student("POST", `/api/requirements/${created.id}/submit`, { form: new FormData() })).status,
       200,
     );
+  });
+});
+
+describe("authorization matrix", () => {
+  test("every protected endpoint answers each role correctly", async () => {
+    const anon = client();
+    const student = await registerAndVerify("matrix-student@example.com");
+    const adviser = await registerAndVerify("matrix-adviser@example.com");
+    const admin = await adminClient();
+    const adviserId = (await adviser("GET", "/api/me")).body.user.id;
+    assert.equal(
+      (await admin("PATCH", `/api/admin/users/${adviserId}/role`, { json: { role: "adviser" } })).status,
+      200,
+    );
+    const adminId = (await admin("GET", "/api/me")).body.user.id;
+
+    // [method, path, body, expected for: anon, student, adviser, admin]. 0 = any non-401/403 (route-specific result).
+    const staffRead = [
+      ["GET", "/api/admin/users"],
+      ["GET", "/api/admin/submissions"],
+      ["GET", `/api/admin/users/${adminId}`],
+      ["GET", "/api/admin/export/progress.csv"],
+      ["GET", "/api/admin/export/companies.csv"],
+    ];
+    const staffWrite = [
+      ["POST", "/api/admin/submissions/999999/review", { status: "approved" }],
+      ["POST", "/api/admin/companies/999999/review", { status: "approved" }],
+      ["PATCH", "/api/admin/companies/999999", { moa: true }],
+    ];
+    const adminOnly = [
+      ["POST", "/api/admin/requirements", {}],
+      ["PUT", "/api/admin/requirements/999999", {}],
+      ["DELETE", "/api/admin/requirements/999999"],
+      ["PATCH", `/api/admin/users/${adminId}/role`, { role: "admin" }],
+      ["DELETE", `/api/admin/users/999999/sessions`],
+    ];
+    const signedIn = [
+      ["GET", "/api/me"],
+      ["GET", "/api/requirements"],
+      ["GET", "/api/companies"],
+      ["PATCH", "/api/me", { fullName: "Matrix" }],
+      ["GET", "/api/submissions/999999/file"],
+      ["DELETE", "/api/requirements/999999/submission"],
+    ];
+
+    const status = async (who, [method, path, json]) =>
+      (await who(method, path, json === undefined ? {} : { json })).status;
+    const failures = [];
+    const expect = async (rows, expectations) => {
+      for (const row of rows) {
+        for (const [name, who, want] of expectations) {
+          const got = await status(who, row);
+          const ok = want === "ok" ? got !== 401 && got !== 403 : got === want;
+          if (!ok) failures.push(`${name} ${row[0]} ${row[1]} -> ${got}, wanted ${want}`);
+        }
+      }
+    };
+    await expect(staffRead, [
+      ["anon", anon, 401],
+      ["student", student, 403],
+      ["adviser", adviser, 200],
+      ["admin", admin, 200],
+    ]);
+    await expect(staffWrite, [
+      ["anon", anon, 401],
+      ["student", student, 403],
+      ["adviser", adviser, "ok"],
+      ["admin", admin, "ok"],
+    ]);
+    await expect(adminOnly, [
+      ["anon", anon, 401],
+      ["student", student, 403],
+      ["adviser", adviser, 403],
+    ]);
+    await expect(signedIn, [
+      ["anon", anon, 401],
+      ["student", student, "ok"],
+      ["adviser", adviser, "ok"],
+    ]);
+    assert.deepEqual(failures, []);
   });
 });

@@ -21,8 +21,9 @@ Open http://localhost:3000.
 
 ### First admin
 
-Set `ADMIN_EMAILS=you@school.edu` in `.env`, then register (or log in) with that address. It is made an admin
-automatically. Admins can then promote others to `adviser` or `admin` from the **Students** tab.
+Set `ADMIN_EMAILS=you@school.edu` in `.env`, then register with that address and **verify it** with the emailed
+link. It becomes an admin as soon as it is verified (an unverified address is never promoted, so nobody can claim
+an admin address before its owner does). Admins can then promote others to `adviser` or `admin` from the **Students** tab.
 
 ### Email
 

@@ -47,6 +47,10 @@ router.put("/requirements/:id", requireRole("admin"), async (req, res) => {
 
 router.delete("/requirements/:id", requireRole("admin"), async (req, res) => {
   const id = parseId(req.params.id);
+  const { rows: found } = await db.execute({ sql: "SELECT kind FROM requirements WHERE id = ?", args: [id] });
+  if (found[0]?.kind === "companies") {
+    throw new HttpError(400, "The company list task cannot be deleted. Mark it N/A instead.");
+  }
   const result = await db.batch(
     [
       { sql: "DELETE FROM submissions WHERE requirement_id = ?", args: [id] },
@@ -67,7 +71,8 @@ router.get("/users", requireRole(...STAFF), async (_req, res) => {
   const { rows } = await db.execute(`
     SELECT u.id, u.email, u.role, u.full_name, u.student_id, u.email_verified_at,
            COUNT(s.id) AS submitted,
-           COALESCE(SUM(s.status = 'approved'), 0) AS approved
+           COALESCE(SUM(s.status = 'approved'), 0) AS approved,
+           COALESCE(SUM(s.status = 'submitted'), 0) AS in_review
     FROM users u
     LEFT JOIN (
       SELECT s.* FROM submissions s JOIN requirements r ON r.id = s.requirement_id
@@ -85,6 +90,7 @@ router.get("/users", requireRole(...STAFF), async (_req, res) => {
       emailVerified: Boolean(u.email_verified_at),
       submitted: Number(u.submitted),
       approved: Number(u.approved),
+      inReview: Number(u.in_review),
     })),
   });
 });

@@ -8,6 +8,7 @@ export async function api(method, url, body) {
   } else if (body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
+    init.keepalive = true; // a save already in flight survives the tab being closed
   }
   let res;
   try {

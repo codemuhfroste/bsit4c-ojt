@@ -47,6 +47,10 @@ export function publicUser(row) {
 }
 
 export async function startSession(res, userId) {
+  // Housekeeping: expired sessions and tokens would otherwise pile up forever.
+  const now = new Date().toISOString();
+  await db.execute({ sql: "DELETE FROM sessions WHERE expires_at < ?", args: [now] }).catch(() => {});
+  await db.execute({ sql: "DELETE FROM user_tokens WHERE expires_at < ?", args: [now] }).catch(() => {});
   const token = newToken();
   await db.execute({
     sql: "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",

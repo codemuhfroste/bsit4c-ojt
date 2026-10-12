@@ -178,8 +178,8 @@ function parseCompany(body) {
 }
 
 // The "Find OJT companies" submission follows the list automatically: it counts as submitted as soon as the student
-// has at least one company, and goes back to "to do" when the list is emptied. Approved stays approved, and
-// students can keep adding companies afterwards.
+// has at least one company, and goes back to "to do" when the list is emptied. Approved stays approved while
+// companies remain, and students can keep adding companies afterwards.
 async function syncCompanySubmission(userId) {
   const { rows: found } = await db.execute("SELECT id FROM requirements WHERE kind = 'companies' ORDER BY id LIMIT 1");
   if (!found[0]) return;
@@ -197,7 +197,7 @@ async function syncCompanySubmission(userId) {
     });
   } else {
     await db.execute({
-      sql: "DELETE FROM submissions WHERE user_id = ? AND requirement_id = ? AND status != 'approved'",
+      sql: "DELETE FROM submissions WHERE user_id = ? AND requirement_id = ?",
       args: [userId, requirementId],
     });
   }

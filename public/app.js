@@ -301,7 +301,7 @@ function buildCompanyRow(c, { patch, actions = [], staff = false }) {
       h("b", {}, c.name),
       h("a", { href: c.link, target: "_blank", rel: "noopener noreferrer" }, icon("link", 13), prettyLink(c.link)),
       c.email
-        ? h("a", { href: `mailto:${c.email}` }, icon("mail", 13), c.email)
+        ? h("a", { href: `mailto:${encodeURIComponent(c.email)}` }, icon("mail", 13), c.email)
         : h("span", { className: "muted mail" }, icon("mail", 13), "Email: N/A"),
     ),
     companyTags(c, patch, staff),
@@ -414,7 +414,7 @@ const realIds = new Map(); // temporary id of a just-added company -> the id the
 let repaintCompanies = () => {};
 
 const MAX_COMPANIES = 20;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[A-Za-z0-9._+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 // Mirrors the server's checks so a bad entry is caught before it is shown (the server still has the last word).
 function normalizeCompany(raw, editing) {
@@ -447,11 +447,19 @@ function normalizeCompany(raw, editing) {
 const toApi = (fields) => ({ ...fields, email: fields.email || "N/A" });
 const serverId = (id) => realIds.get(id) ?? id; // still a "tmp-…" string if creating it failed
 
+// Warn before leaving while a change is still being saved.
+window.addEventListener("beforeunload", (e) => {
+  if (pendingSync > 0) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
 // Re-render the whole checklist (status, progress ring) once every change is saved and no form is open.
 function maybeRefresh() {
   if (needsRefresh && pendingSync === 0 && !document.querySelector("#view .panel")) {
     needsRefresh = false;
-    render();
+    render({ background: true });
   }
 }
 
@@ -1064,7 +1072,7 @@ function verifyBanner() {
     "div",
     { className: "banner" },
     icon("mail", 18),
-    h("span", {}, "Verify your email to submit requirements. Check your inbox for the link."),
+    h("span", {}, "Verify your email to upload files. Check your inbox, and your spam folder, for the link."),
     btn,
   );
 }
@@ -1525,7 +1533,12 @@ async function studentDetailView(id) {
       h(
         "div",
         { className: "profile-actions" },
-        h("a", { className: "btn outline sm", href: `mailto:${u.email}` }, icon("mail", 15), "Email student"),
+        h(
+          "a",
+          { className: "btn outline sm", href: `mailto:${encodeURIComponent(u.email)}` },
+          icon("mail", 15),
+          "Email student",
+        ),
       ),
     ),
     h(
@@ -1668,7 +1681,7 @@ async function studentsView(arg) {
                 `${u.approved}/${totalRequirements}`,
               ),
             ),
-            u.submitted - u.approved > 0 && h("small", {}, `${u.submitted - u.approved} awaiting action`),
+            u.inReview > 0 && h("small", {}, `${u.inReview} awaiting review`),
           ),
           h("td", {}, roleCell),
         );
@@ -1992,7 +2005,9 @@ function paintTabs(available) {
   mobile.replaceChildren(...make(false));
 }
 
-async function render() {
+// `background` renders are quiet refreshes after a save: they must never replace the page under someone who has a
+// form open (the typed text would vanish), so they wait and run again when that form closes.
+async function render({ background = false } = {}) {
   const available = TABS.filter((t) => !t.show || t.show());
   if (!available.some((t) => t.id === active)) active = "checklist";
   paintTabs(available);
@@ -2001,6 +2016,10 @@ async function render() {
   try {
     const node = await available.find((t) => t.id === active).build(routeArg);
     if (token !== renderToken) return; // a newer render started
+    if (background && document.querySelector("#view .panel")) {
+      needsRefresh = true; // a form was opened while this was loading
+      return;
+    }
     view.replaceChildren(node);
     window.scrollTo(0, scrollY);
   } catch (err) {
