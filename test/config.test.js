@@ -7,6 +7,8 @@ const root = new URL("../", import.meta.url);
 // A malformed vercel.json fails the whole Vercel build ("Invalid vercel.json file provided").
 test("vercel.json is valid JSON with the expected rewrite and header rules", () => {
   const config = JSON.parse(fs.readFileSync(new URL("vercel.json", root), "utf8"));
+  // Without this, Vercel auto-detects Express and tries to run src/app.js (or server.js) as the site's handler.
+  assert.equal(config.framework, null);
   assert.deepEqual(config.rewrites, [{ source: "/(.*)", destination: "/api" }]);
   assert.ok(fs.existsSync(new URL("api/index.js", root)), "the rewrite target needs api/index.js");
 
@@ -23,5 +25,20 @@ test("package.json and the environment example are well formed", () => {
   const example = fs.readFileSync(new URL(".env.example", root), "utf8");
   for (const key of ["TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN", "APP_URL", "SMTP_URL", "MAIL_FROM", "ADMIN_EMAILS"]) {
     assert.match(example, new RegExp(`^${key}=`, "m"));
+  }
+});
+
+// Vercel's Express auto-detection looks for these file names; they must not exist (see vercel.json "framework").
+test("no file names that Vercel treats as an Express entrypoint", () => {
+  for (const dir of ["", "src/"]) {
+    for (const name of ["app", "index", "server"]) {
+      for (const ext of ["js", "mjs", "cjs", "ts"]) {
+        assert.equal(
+          fs.existsSync(new URL(`${dir}${name}.${ext}`, root)),
+          false,
+          `${dir}${name}.${ext} would be auto-detected`,
+        );
+      }
+    }
   }
 });

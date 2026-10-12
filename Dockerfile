@@ -9,4 +9,4 @@ RUN chown -R node:node /app
 USER node
 EXPOSE 3000
 HEALTHCHECK CMD wget -qO- http://localhost:3000/healthz || exit 1
-CMD ["node", "src/server.js"]
+CMD ["node", "src/listen.js"]

@@ -11,7 +11,7 @@ process.env.ADMIN_EMAILS = "admin@example.com";
 process.env.RATE_LIMIT_SCALE = "100"; // the suite signs up far more accounts than one real client would
 delete process.env.SMTP_URL;
 
-const { createApp } = await import("../src/app.js");
+const { createApp } = await import("../src/create-app.js");
 const { migrate, db } = await import("../src/db.js");
 const { outbox } = await import("../src/mailer.js");
 
