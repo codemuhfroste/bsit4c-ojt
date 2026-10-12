@@ -1,4 +1,5 @@
 import { api, avatar, fmtDate, fmtDay, h, icon, openDialog, parseDay, toast } from "/common.js";
+import { trackerView } from "/tracker.js";
 
 const view = document.getElementById("view");
 
@@ -2125,6 +2126,7 @@ async function requirementsView() {
 const TABS = [
   { id: "checklist", text: "Checklist", icon: "list", build: checklistView },
   { id: "review", text: "Review", icon: "check", build: reviewView, show: isStaff },
+  { id: "tracker", text: "Tracker", icon: "table", build: trackerView, show: isStaff },
   { id: "students", text: "Students", icon: "users", build: studentsView, show: isStaff },
   { id: "requirements", text: "Requirements", icon: "file", build: requirementsView, show: isAdmin },
   { id: "profile", text: "Profile", icon: "user", build: profileView },

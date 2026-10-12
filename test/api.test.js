@@ -762,6 +762,71 @@ describe("current tasks", () => {
     assert.deepEqual([row.inReview, row.submitted, row.approved], [0, 1, 0]);
   });
 
+  test("tracker grid: one row per student with every requirement's status and the company numbers", async () => {
+    const admin = await adminClient();
+    const done = await registerAndVerify("grid-done@example.com");
+    const waiting = await registerAndVerify("grid-waiting@example.com");
+    const nothing = client();
+    await nothing("POST", "/api/register", {
+      json: { acceptPrivacy: true, email: "grid-nothing@example.com", password: PASSWORD, fullName: "Zed Nothing" },
+    });
+
+    // done: company approved + resume approved; waiting: company in review, applied and accepted; nothing: no activity
+    await done("POST", "/api/companies", {
+      json: {
+        name: "Done Co",
+        link: "done.example.com",
+        email: "N/A",
+        location: "inside",
+        applied: true,
+        response: "accepted",
+      },
+    });
+    await waiting("POST", "/api/companies", {
+      json: { name: "Wait Co", link: "wait.example.com", email: "N/A", location: "outside" },
+    });
+    await waiting("POST", "/api/companies", {
+      json: { name: "Wait Co 2", link: "wait2.example.com", email: "N/A", location: "inside", applied: true },
+    });
+    await done("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf("cv")) });
+    const mine = async (c) => (await c("GET", "/api/requirements")).body.items;
+    const companySub = (await mine(done)).find((i) => i.id === COMPANIES).submission.id;
+    const resumeSub = (await mine(done)).find((i) => i.id === RESUME).submission.id;
+    await admin("POST", `/api/admin/submissions/${companySub}/review`, { json: { status: "approved" } });
+    await admin("POST", `/api/admin/submissions/${resumeSub}/review`, { json: { status: "approved" } });
+
+    const { status, body } = await admin("GET", "/api/admin/tracker");
+    assert.equal(status, 200);
+    assert.deepEqual(
+      body.requirements.filter((r) => r.available).map((r) => [r.title, r.optional]),
+      [
+        ["Find OJT companies", false],
+        ["Resume / CV", true],
+      ],
+    );
+    assert.ok(
+      body.requirements.some((r) => !r.available),
+      "closed (N/A) requirements are listed too, flagged unavailable",
+    );
+    const by = Object.fromEntries(body.students.map((s) => [s.email, s]));
+    assert.ok(!("admin@example.com" in by), "only students appear as rows");
+
+    const a = by["grid-done@example.com"];
+    assert.equal(a.cells[COMPANIES].status, "approved");
+    assert.equal(a.cells[RESUME].status, "approved");
+    assert.deepEqual([a.companies.total, a.companies.applied, a.companies.accepted], [1, 1, 1]);
+    const w = by["grid-waiting@example.com"];
+    assert.equal(w.cells[COMPANIES].status, "submitted");
+    assert.equal(w.cells[RESUME], undefined); // no submission means "missing" on the grid
+    assert.deepEqual([w.companies.total, w.companies.applied, w.companies.inside], [2, 1, 1]);
+    const z = by["grid-nothing@example.com"];
+    assert.deepEqual(z.cells, {});
+    assert.equal(z.companies.total, 0);
+    assert.equal(z.emailVerified, false);
+    assert.ok(a.lastActivity && z.lastActivity, "everyone has a last-activity time (at least their signup)");
+    assert.ok(!JSON.stringify(body).match(/password|hash/i), "nothing sensitive in the grid data");
+  });
+
   test("emptying the company list puts the task back to to-do", async () => {
     const c = await registerAndVerify("empties@example.com");
     const { body } = await c("POST", "/api/companies", {
@@ -811,6 +876,7 @@ describe("authorization matrix", () => {
     const staffRead = [
       ["GET", "/api/admin/users"],
       ["GET", "/api/admin/submissions"],
+      ["GET", "/api/admin/tracker"],
       ["GET", `/api/admin/users/${adminId}`],
       ["GET", "/api/admin/export/progress.csv"],
       ["GET", "/api/admin/export/companies.csv"],

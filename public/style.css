@@ -2034,3 +2034,337 @@ dialog.modal .actions {
 dialog.modal .actions .btn {
   white-space: nowrap;
 }
+
+/* ---------- Tracker (spreadsheet-style monitoring grid) ---------- */
+.stats.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 760px) {
+  .stats.four {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.stat.good .num {
+  color: var(--ok);
+}
+.stat.bad .num {
+  color: var(--err);
+}
+.stat.wait .num {
+  color: var(--warn);
+}
+.sheet-tools {
+  align-items: center;
+}
+.sheet-tools .grow {
+  flex: 1;
+}
+.sheet-tools .chips {
+  margin: 0;
+}
+.check.inline {
+  margin: 0;
+  font-size: 0.86rem;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  font-weight: 600;
+  border-radius: 6px;
+}
+.legend-item.approved {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.legend-item.submitted {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.legend-item.rejected {
+  color: var(--err);
+  background: var(--err-soft);
+}
+.legend-item.todo {
+  color: var(--err);
+  background: repeating-linear-gradient(135deg, var(--err-soft) 0 5px, var(--surface) 5px 10px);
+  border: 1px solid var(--err-soft);
+}
+.legend-item.na {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.legend .hint {
+  margin-left: auto;
+}
+
+.sheet-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 340px);
+  min-height: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+}
+table.sheet {
+  width: max-content;
+  min-width: 100%;
+  font-size: 0.84rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.sheet th,
+.sheet td {
+  padding: 0;
+  white-space: nowrap;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.sheet tbody tr:last-child td {
+  border-bottom: 1px solid var(--border);
+}
+.sheet tbody tr:hover td {
+  background-clip: padding-box;
+}
+.sheet td.cell {
+  padding: 7px 10px;
+  vertical-align: middle;
+}
+.sheet thead th {
+  position: sticky;
+  z-index: 3;
+  background: var(--surface-2);
+  text-transform: none;
+}
+.sheet .letters th {
+  top: 0;
+  height: 22px;
+  padding: 2px 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--muted);
+}
+.sheet .titles th {
+  top: 22px;
+  padding: 0;
+  text-align: left;
+  vertical-align: bottom;
+  font-size: 0.78rem;
+  color: var(--text);
+  border-bottom: 2px solid var(--border-strong);
+}
+.sheet .titles th.req-col {
+  min-width: 124px;
+  max-width: 170px;
+  white-space: normal;
+}
+.th-btn {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.th-btn:hover {
+  background: var(--primary-soft);
+}
+.th-label small {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+.sort-mark {
+  flex: none;
+  font-size: 0.62rem;
+  color: var(--primary-ink);
+}
+.sheet .rownum {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 44px;
+  min-width: 44px;
+  font-size: 0.74rem;
+  text-align: center;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.sheet .stu {
+  position: sticky;
+  left: 44px;
+  z-index: 2;
+  min-width: 236px;
+  max-width: 270px;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--border-strong);
+}
+.sheet tbody tr:hover td.stu {
+  background: var(--primary-soft);
+}
+.sheet thead .rownum,
+.sheet thead .stu,
+.sheet .corner {
+  z-index: 5;
+}
+.sheet .corner {
+  left: 0;
+  background: var(--surface-2);
+}
+.sheet thead .stu {
+  background: var(--surface-2);
+}
+.sheet td.stu .who small {
+  display: block;
+  line-height: 1.2;
+}
+.sheet td.cell:focus,
+.sheet td.stu:focus {
+  position: relative;
+  z-index: 4;
+  outline: 2px solid var(--primary-ink);
+  outline-offset: -2px;
+}
+.sheet td.cell svg.icon {
+  margin-right: 5px;
+}
+.sheet td.approved {
+  font-weight: 600;
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.sheet td.submitted {
+  font-weight: 600;
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+.sheet td.rejected {
+  font-weight: 600;
+  color: var(--err);
+  background: var(--err-soft);
+}
+.sheet td.todo {
+  font-weight: 600;
+  color: var(--err);
+  background: repeating-linear-gradient(135deg, var(--err-soft) 0 6px, var(--surface) 6px 12px);
+}
+.sheet td.na {
+  color: var(--muted);
+  background: repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--surface) 6px 12px);
+}
+.sheet td.optional {
+  color: var(--muted);
+  text-align: center;
+}
+.sheet td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sheet td.num.zero {
+  color: var(--muted);
+}
+.sheet td.num.warn {
+  font-weight: 700;
+  color: var(--err);
+  background: var(--err-soft);
+}
+.sheet .tabular {
+  font-variant-numeric: tabular-nums;
+}
+.sheet .mini {
+  display: inline-block;
+  width: 56px;
+  height: 6px;
+  margin-left: 8px;
+  overflow: hidden;
+  vertical-align: middle;
+  background: var(--border);
+  border-radius: 99px;
+}
+.sheet .mini i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+.sheet td.ok-cell {
+  color: var(--ok);
+}
+.sheet td.missing-cell {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--err);
+}
+.sheet .badge-n {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  margin-right: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--err);
+  border-radius: 99px;
+}
+[data-theme="dark"] .sheet .badge-n {
+  color: #1c0b0d;
+}
+.sheet tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  font-weight: 600;
+  background: var(--surface-2);
+  border-top: 2px solid var(--border-strong);
+  border-bottom: 0;
+}
+.sheet tfoot .rownum,
+.sheet tfoot .stu {
+  z-index: 4;
+}
+.sheet .totals-label {
+  padding: 7px 10px;
+}
+.sheet .stack {
+  display: flex;
+  width: 100%;
+  height: 5px;
+  margin-top: 4px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: 99px;
+}
+.sheet .stack .a {
+  background: var(--ok);
+}
+.sheet .stack .s {
+  background: var(--warn);
+}
+.sheet .stack .m {
+  background: var(--err);
+}
+.sheet-empty {
+  padding: 40px 16px !important;
+  text-align: center;
+  color: var(--muted);
+}

@@ -65,6 +65,65 @@ router.delete("/requirements/:id", requireRole("admin"), async (req, res) => {
 
 // ---- Students and review (adviser + admin) ----
 
+// The monitoring grid: one row per student, one cell per requirement, plus their company-list numbers.
+router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
+  const { rows: reqs } = await db.execute(
+    "SELECT id, title, phase, kind, available, optional FROM requirements ORDER BY sort_order, id",
+  );
+  const { rows: students } = await db.execute(
+    "SELECT id, full_name, student_id, email, email_verified_at, created_at FROM users WHERE role = 'student' ORDER BY full_name, email",
+  );
+  const { rows: subs } = await db.execute("SELECT id, user_id, requirement_id, status, updated_at FROM submissions");
+  const { rows: comps } = await db.execute(`
+    SELECT user_id, COUNT(*) AS total, SUM(applied) AS applied, SUM(response = 'accepted') AS accepted,
+           SUM(review = 'approved') AS approved, SUM(review = 'rejected') AS rejected, SUM(moa) AS moa,
+           SUM(location = 'inside') AS inside, MAX(created_at) AS last
+    FROM companies GROUP BY user_id`);
+
+  const subsBy = new Map();
+  for (const sub of subs) {
+    const key = Number(sub.user_id);
+    if (!subsBy.has(key)) subsBy.set(key, []);
+    subsBy.get(key).push(sub);
+  }
+  const compBy = new Map(comps.map((c) => [Number(c.user_id), c]));
+  const n = (v) => Number(v ?? 0);
+
+  res.json({
+    requirements: reqs.map((r) => ({
+      id: Number(r.id),
+      title: r.title,
+      phase: r.phase,
+      kind: r.kind,
+      available: Boolean(r.available),
+      optional: Boolean(r.optional),
+    })),
+    students: students.map((u) => {
+      const mine = subsBy.get(Number(u.id)) ?? [];
+      const c = compBy.get(Number(u.id));
+      const stamps = [u.created_at, c?.last, ...mine.map((x) => x.updated_at)].filter(Boolean);
+      return {
+        id: Number(u.id),
+        fullName: u.full_name,
+        studentId: u.student_id,
+        email: u.email,
+        emailVerified: Boolean(u.email_verified_at),
+        cells: Object.fromEntries(mine.map((x) => [Number(x.requirement_id), { status: x.status, id: Number(x.id) }])),
+        companies: {
+          total: n(c?.total),
+          applied: n(c?.applied),
+          accepted: n(c?.accepted),
+          approved: n(c?.approved),
+          rejected: n(c?.rejected),
+          moa: n(c?.moa),
+          inside: n(c?.inside),
+        },
+        lastActivity: stamps.sort().at(-1),
+      };
+    }),
+  });
+});
+
 router.get("/users", requireRole(...STAFF), async (_req, res) => {
   const total = Number(
     (await db.execute("SELECT COUNT(*) AS n FROM requirements WHERE available = 1 AND optional = 0")).rows[0].n,
