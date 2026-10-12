@@ -172,4 +172,7 @@ export const migrations = [
     "ALTER TABLE companies ADD COLUMN reviewed_at TEXT",
     "ALTER TABLE companies ADD COLUMN moa INTEGER NOT NULL DEFAULT 0",
   ],
+
+  // 12: record that each person accepted the Privacy Notice (and which version)
+  ["ALTER TABLE users ADD COLUMN privacy_accepted_at TEXT", "ALTER TABLE users ADD COLUMN privacy_version TEXT"],
 ];

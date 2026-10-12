@@ -1174,6 +1174,134 @@ function passwordDialog() {
   });
 }
 
+function deleteAccountDialog() {
+  openDialog((close) => {
+    const password = h("input", {
+      name: "password",
+      type: "password",
+      autocomplete: "current-password",
+      required: true,
+    });
+    const form = h(
+      "form",
+      {
+        onsubmit: (e) => {
+          e.preventDefault();
+          run(form.querySelector("[type=submit]"), async () => {
+            await api("DELETE", "/api/me", { password: password.value });
+            close();
+            toast("Your account and data were deleted.");
+            setTimeout(() => (location.href = "/"), 900);
+          });
+        },
+      },
+      h("h2", {}, "Delete my account"),
+      h(
+        "p",
+        { className: "muted", style: "margin-bottom:14px" },
+        "This permanently deletes your account, company list, uploaded files and review records. It cannot be undone.",
+      ),
+      h("label", { className: "field" }, "Confirm with your password", password),
+      h(
+        "div",
+        { className: "actions" },
+        h("button", { type: "button", className: "btn outline", onclick: close }, "Cancel"),
+        h("button", { type: "submit", className: "btn danger" }, "Delete everything"),
+      ),
+    );
+    return form;
+  });
+}
+
+// Everyone must accept the current Privacy Notice. People who signed up before it existed see this once.
+function privacyGate() {
+  return new Promise((resolve) => {
+    openDialog(
+      () => {
+        const agree = h("input", { type: "checkbox", id: "gate-agree" });
+        const accept = h("button", { type: "button", className: "btn", disabled: true }, "Accept and continue");
+        agree.addEventListener("change", () => (accept.disabled = !agree.checked));
+        accept.addEventListener("click", () =>
+          run(accept, async () => {
+            me = (await api("POST", "/api/me/privacy", { accept: true })).user;
+            document.querySelector("dialog.modal")?.remove();
+            resolve();
+          }),
+        );
+        return h(
+          "div",
+          { style: "padding:22px" },
+          h("h2", {}, "Please review our Privacy Notice"),
+          h(
+            "p",
+            { className: "muted", style: "margin-bottom:12px" },
+            "We now have a Privacy Notice under the Data Privacy Act. It explains what this app keeps about you (name, student ID, email, your company list and uploaded files), who can see it, that it is stored outside the Philippines, how long we keep it, and your rights, including downloading or deleting your data at any time.",
+          ),
+          h(
+            "p",
+            { style: "margin-bottom:14px" },
+            h("a", { href: "/privacy.html", target: "_blank", rel: "noopener" }, "Read the full Privacy Notice"),
+          ),
+          h("label", { className: "check", for: "gate-agree" }, agree, "I have read and accept the Privacy Notice."),
+          h(
+            "div",
+            { className: "actions" },
+            h(
+              "button",
+              {
+                type: "button",
+                className: "btn ghost",
+                onclick: async () => {
+                  await api("POST", "/api/logout").catch(() => {});
+                  location.href = "/";
+                },
+              },
+              "Log out",
+            ),
+            h(
+              "button",
+              { type: "button", className: "btn danger-outline", onclick: deleteAccountDialog },
+              "Delete my account",
+            ),
+            accept,
+          ),
+        );
+      },
+      { dismissable: false, wide: true },
+    );
+  });
+}
+
+function privacyCard() {
+  return h(
+    "section",
+    { className: "card privacy-card", style: "margin-top:22px" },
+    h("h2", {}, "Privacy & data"),
+    h(
+      "p",
+      { className: "muted", style: "font-size:.9rem" },
+      "You decide what happens to your information. Download a copy of everything we hold about you, or delete your account and all of it. See the Privacy Notice for details.",
+    ),
+    h(
+      "div",
+      { className: "actions" },
+      h(
+        "a",
+        { className: "btn outline sm", href: "/api/me/export", download: "" },
+        icon("download", 15),
+        "Download my data",
+      ),
+      h(
+        "button",
+        { type: "button", className: "btn danger-outline sm", onclick: deleteAccountDialog },
+        icon("trash", 15),
+        "Delete my account",
+      ),
+      h("a", { className: "btn ghost sm", href: "/privacy.html", target: "_blank", rel: "noopener" }, "Privacy Notice"),
+    ),
+  );
+}
+
 async function profileView() {
   const { items, progress } = await api("GET", "/api/requirements");
   const submitted = items
@@ -1362,6 +1490,7 @@ async function profileView() {
     stats,
     h("div", { className: "section-head" }, h("h2", {}, "Submission history")),
     historyCard,
+    privacyCard(),
   );
 }
 
@@ -1539,6 +1668,32 @@ async function studentDetailView(id) {
           icon("mail", 15),
           "Email student",
         ),
+        isAdmin() &&
+          u.id !== me.id &&
+          u.role !== "admin" &&
+          h(
+            "button",
+            {
+              type: "button",
+              className: "btn danger-outline sm",
+              onclick: async () => {
+                const ok = await confirmDialog({
+                  title: "Delete this account?",
+                  text: `This permanently erases ${u.fullName || u.email}'s account, company list, uploaded files and review records. Use it for a data-erasure request. It cannot be undone.`,
+                  confirm: "Delete everything",
+                  danger: true,
+                });
+                if (!ok) return;
+                await run(null, async () => {
+                  await api("DELETE", `/api/admin/users/${u.id}`);
+                  toast("Account deleted.");
+                  location.hash = "students";
+                });
+              },
+            },
+            icon("trash", 15),
+            "Delete account",
+          ),
       ),
     ),
     h(
@@ -2048,6 +2203,7 @@ try {
 
 if (me) {
   document.getElementById("who").textContent = `Hi, ${(me.fullName || me.email).split(/[\s@]/)[0]}`;
+  if (!me.privacyAccepted) await privacyGate();
   await render();
   const verified = new URLSearchParams(location.search).get("verified");
   if (verified) {

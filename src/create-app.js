@@ -34,7 +34,15 @@ export function createApp() {
 
   app.use(
     helmet({
-      contentSecurityPolicy: { directives: { "upgrade-insecure-requests": isProd ? [] : null } },
+      // Everything is served from this site: no third-party scripts, fonts, images or trackers.
+      contentSecurityPolicy: {
+        directives: {
+          "font-src": ["'self'"],
+          "style-src": ["'self'", "'unsafe-inline'"],
+          "img-src": ["'self'", "data:"],
+          "upgrade-insecure-requests": isProd ? [] : null,
+        },
+      },
       strictTransportSecurity: isProd,
     }),
   );

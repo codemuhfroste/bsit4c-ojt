@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { db } from "./db.js";
+import { PRIVACY_VERSION } from "./privacy.js";
 
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const COOKIE = "sid";
@@ -43,6 +44,7 @@ export function publicUser(row) {
     studentId: row.student_id,
     emailVerified: Boolean(row.email_verified_at),
     joined: row.created_at,
+    privacyAccepted: row.privacy_version === PRIVACY_VERSION,
   };
 }
 

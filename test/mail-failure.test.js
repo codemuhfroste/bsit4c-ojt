@@ -36,7 +36,11 @@ const post = (url, json) =>
   fetch(base + url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(json) });
 
 test("signup still works when the mail server is down", async () => {
-  const res = await post("/api/register", { email: "down@example.com", password: "correct horse" });
+  const res = await post("/api/register", {
+    acceptPrivacy: true,
+    email: "down@example.com",
+    password: "correct horse",
+  });
   assert.equal(res.status, 201);
 });
 

@@ -114,6 +114,27 @@ All endpoints are JSON under `/api`. Sessions use an HttpOnly `sid` cookie. Erro
 | `GET /users/:id` (a student's checklist + companies)    | adviser |
 | `GET /export/progress.csv`, `GET /export/companies.csv` | adviser |
 
+## Privacy (Data Privacy Act of 2012)
+
+- **Privacy Notice** at `/privacy.html`: what is collected and why, who can see it, the service providers and the
+  cross-border storage (Vercel and Turso in the US, Gmail for email), retention, security, the data-subject rights and
+  the National Privacy Commission. The contact address shown comes from `PRIVACY_CONTACT` (default: the `MAIL_FROM`
+  address). The version lives in `src/privacy.js` (`PRIVACY_VERSION`); change it whenever the notice changes in a way
+  that needs fresh consent, and everyone is asked to accept it again.
+- **Consent** is required to create an account (a checkbox, enforced on the server) and is recorded with the time and
+  version. People who signed up before the notice existed, or when the version changes, see a prompt they cannot dismiss
+  until they accept (or log out, or delete their account).
+- **Access / portability:** _Profile → Privacy & data → Download my data_ (`GET /api/me/export`, JSON, never includes
+  the password).
+- **Erasure:** _Delete my account_ (`DELETE /api/me`, needs the password) removes the account, company list, uploads,
+  sessions and review records. Admins can erase a student on request from the student's page
+  (`DELETE /api/admin/users/:id`). The only admin cannot delete their own account.
+- **No third parties:** fonts are self-hosted and the content security policy allows only this site, so no visitor's
+  address is sent to a font, analytics or ad provider. A test fails if a page ever loads something from another host.
+- **Retention promise** in the notice: data is deleted or anonymized within 30 days after the class's OJT program ends.
+  Adjust the wording in `public/privacy.html` if your school's policy differs, and have the university's Data
+  Protection Officer review the notice before relying on it.
+
 ## Security notes
 
 - Passwords: bcrypt (cost 12). Sessions, verification and reset tokens are stored only as SHA-256 hashes.

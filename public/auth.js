@@ -175,7 +175,9 @@ onSubmit(reg, async (v) => {
   if (!v.email.trim()) throw new Error("Enter your email address.");
   if (v.password.length < 8) throw new Error("Password must be at least 8 characters.");
   if (v.password !== v.confirm) throw new Error("Passwords do not match.");
+  if (!v.acceptPrivacy) throw new Error("Please read and accept the Privacy Notice to continue.");
   await api("POST", "/api/register", {
+    acceptPrivacy: true,
     fullName: v.fullName.trim(),
     studentId: v.studentId.trim(),
     email: v.email,

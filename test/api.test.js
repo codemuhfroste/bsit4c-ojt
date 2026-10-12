@@ -8,6 +8,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ojt-test-"));
 process.env.NODE_ENV = "test";
 process.env.TURSO_DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
 process.env.ADMIN_EMAILS = "admin@example.com";
+process.env.PRIVACY_CONTACT = "privacy@example.com";
 process.env.RATE_LIMIT_SCALE = "100"; // the suite signs up far more accounts than one real client would
 delete process.env.SMTP_URL;
 
@@ -48,7 +49,9 @@ const lastMailToken = (to, param) => {
 
 async function registerAndVerify(email) {
   const c = client();
-  const reg = await c("POST", "/api/register", { json: { email, password: PASSWORD, fullName: "Test User" } });
+  const reg = await c("POST", "/api/register", {
+    json: { acceptPrivacy: true, email, password: PASSWORD, fullName: "Test User" },
+  });
   assert.equal(reg.status, 201);
   const ver = await c("POST", "/api/verify", { json: { token: lastMailToken(email, "verify") } });
   assert.equal(ver.status, 200);
@@ -98,17 +101,26 @@ after(async () => {
 describe("registration and login", () => {
   test("validates input", async () => {
     const c = client();
-    assert.equal((await c("POST", "/api/register", { json: { email: "nope", password: PASSWORD } })).status, 400);
-    assert.equal((await c("POST", "/api/register", { json: { email: "a@b.co", password: "short" } })).status, 400);
     assert.equal(
-      (await c("POST", "/api/register", { json: { email: "a@b.co", password: "x".repeat(73) } })).status,
+      (await c("POST", "/api/register", { json: { acceptPrivacy: true, email: "nope", password: PASSWORD } })).status,
+      400,
+    );
+    assert.equal(
+      (await c("POST", "/api/register", { json: { acceptPrivacy: true, email: "a@b.co", password: "short" } })).status,
+      400,
+    );
+    assert.equal(
+      (await c("POST", "/api/register", { json: { acceptPrivacy: true, email: "a@b.co", password: "x".repeat(73) } }))
+        .status,
       400,
     );
   });
 
   test("registers, logs in, rejects duplicates, logs out", async () => {
     const c = client();
-    const reg = await c("POST", "/api/register", { json: { email: "Dup@Example.com", password: PASSWORD } });
+    const reg = await c("POST", "/api/register", {
+      json: { acceptPrivacy: true, email: "Dup@Example.com", password: PASSWORD },
+    });
     assert.equal(reg.status, 201);
     assert.equal(reg.body.user.email, "dup@example.com");
     assert.equal(reg.body.user.role, "student");
@@ -117,7 +129,9 @@ describe("registration and login", () => {
     assert.equal("section" in reg.body.user, false);
     assert.equal((await c("GET", "/api/me")).body.user.email, "dup@example.com");
 
-    const again = await client()("POST", "/api/register", { json: { email: "dup@example.com", password: PASSWORD } });
+    const again = await client()("POST", "/api/register", {
+      json: { acceptPrivacy: true, email: "dup@example.com", password: PASSWORD },
+    });
     assert.equal(again.status, 409);
 
     assert.equal((await c("POST", "/api/logout")).status, 200);
@@ -146,7 +160,9 @@ describe("registration and login", () => {
   test("ADMIN_EMAILS grants admin only after the address is verified", async () => {
     // Someone registering a listed address without owning it must not become admin or see student data.
     const squatter = client();
-    const reg = await squatter("POST", "/api/register", { json: { email: "admin@example.com", password: PASSWORD } });
+    const reg = await squatter("POST", "/api/register", {
+      json: { acceptPrivacy: true, email: "admin@example.com", password: PASSWORD },
+    });
     assert.equal(reg.body.user.role, "student");
     assert.equal(reg.body.user.emailVerified, false);
     assert.equal((await squatter("GET", "/api/admin/users")).status, 403);
@@ -174,7 +190,9 @@ describe("registration and login", () => {
 describe("email verification and password reset", () => {
   test("verifies an email once", async () => {
     const c = client();
-    await c("POST", "/api/register", { json: { email: "verify@example.com", password: PASSWORD } });
+    await c("POST", "/api/register", {
+      json: { acceptPrivacy: true, email: "verify@example.com", password: PASSWORD },
+    });
     const token = lastMailToken("verify@example.com", "verify");
     assert.equal((await c("POST", "/api/verify", { json: { token } })).status, 200);
     assert.equal((await c("GET", "/api/me")).body.user.emailVerified, true);
@@ -245,7 +263,9 @@ describe("checklist", () => {
 
   test("unverified users cannot submit", async () => {
     const c = client();
-    await c("POST", "/api/register", { json: { email: "unverified@example.com", password: PASSWORD } });
+    await c("POST", "/api/register", {
+      json: { acceptPrivacy: true, email: "unverified@example.com", password: PASSWORD },
+    });
     const res = await c("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf()) });
     assert.equal(res.status, 403);
   });
@@ -806,9 +826,11 @@ describe("authorization matrix", () => {
       ["DELETE", "/api/admin/requirements/999999"],
       ["PATCH", `/api/admin/users/${adminId}/role`, { role: "admin" }],
       ["DELETE", `/api/admin/users/999999/sessions`],
+      ["DELETE", "/api/admin/users/999999"],
     ];
     const signedIn = [
       ["GET", "/api/me"],
+      ["GET", "/api/me/export"],
       ["GET", "/api/requirements"],
       ["GET", "/api/companies"],
       ["PATCH", "/api/me", { fullName: "Matrix" }],
@@ -851,5 +873,172 @@ describe("authorization matrix", () => {
       ["adviser", adviser, "ok"],
     ]);
     assert.deepEqual(failures, []);
+  });
+});
+
+describe("privacy and data rights", () => {
+  test("consent is required to sign up and is recorded", async () => {
+    const c = client();
+    const body = { email: "consent@example.com", password: PASSWORD, fullName: "Con Sent" };
+    for (const missing of [undefined, false, "yes", 1]) {
+      const res = await c("POST", "/api/register", { json: { ...body, acceptPrivacy: missing } });
+      assert.equal(res.status, 400, `acceptPrivacy=${missing} must be refused`);
+      assert.match(res.body.error, /Privacy Notice/);
+    }
+    assert.equal((await c("POST", "/api/login", { json: { email: body.email, password: PASSWORD } })).status, 401); // nothing was created
+    const ok = await c("POST", "/api/register", { json: { ...body, acceptPrivacy: true } });
+    assert.equal(ok.status, 201);
+    assert.equal(ok.body.user.privacyAccepted, true);
+    const row = (
+      await db.execute({
+        sql: "SELECT privacy_accepted_at, privacy_version FROM users WHERE email = ?",
+        args: [body.email],
+      })
+    ).rows[0];
+    assert.ok(row.privacy_accepted_at && row.privacy_version);
+  });
+
+  test("people who signed up before the notice are asked to accept it", async () => {
+    const c = await registerAndVerify("legacy@example.com");
+    await db.execute({
+      sql: "UPDATE users SET privacy_version = NULL, privacy_accepted_at = NULL WHERE email = ?",
+      args: ["legacy@example.com"],
+    });
+    assert.equal((await c("GET", "/api/me")).body.user.privacyAccepted, false);
+    assert.equal((await c("POST", "/api/me/privacy", { json: { accept: false } })).status, 400);
+    assert.equal((await c("POST", "/api/me/privacy", { json: {} })).status, 400);
+    const ok = await c("POST", "/api/me/privacy", { json: { accept: true } });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.body.user.privacyAccepted, true);
+    assert.equal((await client()("POST", "/api/me/privacy", { json: { accept: true } })).status, 401);
+  });
+
+  test("the notice page and its contact details are public", async () => {
+    const info = await client()("GET", "/api/privacy-info");
+    assert.equal(info.status, 200);
+    assert.equal(info.body.contact, "privacy@example.com");
+    assert.match(info.body.version, /^\d{4}-\d{2}-\d{2}$/);
+    const page = await client()("GET", "/privacy.html");
+    assert.equal(page.status, 200);
+    const text = Buffer.from(page.body).toString("utf8");
+    for (const must of ["Data Privacy Act of 2012", "National Privacy Commission", "Delete my account", "retention"]) {
+      assert.ok(text.toLowerCase().includes(must.toLowerCase()), `the notice should mention "${must}"`);
+    }
+  });
+
+  test("download my data: complete, and never includes the password", async () => {
+    const c = await registerAndVerify("export@example.com");
+    await c("PATCH", "/api/me", { json: { fullName: "Ex Port", studentId: "2023-5" } });
+    await c("POST", "/api/companies", {
+      json: {
+        name: "Export Co",
+        link: "export.example.com",
+        email: "hr@export.example.com",
+        location: "outside",
+        applied: true,
+      },
+    });
+    await c("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf("cv bytes")) });
+
+    assert.equal((await client()("GET", "/api/me/export")).status, 401);
+    const res = await c("GET", "/api/me/export");
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-disposition"), /attachment; filename="my-ojt-data-/);
+    const data = res.body; // the test client already parsed the JSON
+    const raw = JSON.stringify(data);
+    assert.deepEqual(
+      [data.account.fullName, data.account.studentId, data.account.email],
+      ["Ex Port", "2023-5", "export@example.com"],
+    );
+    assert.ok(data.account.privacyNoticeAcceptedAt);
+    assert.deepEqual(
+      data.companies.map((x) => [x.name, x.email, x.location, x.applied]),
+      [["Export Co", "hr@export.example.com", "Outside Legazpi", true]],
+    );
+    assert.ok(data.submissions.some((x) => x.requirement === "Resume / CV" && x.fileName === "doc.pdf"));
+    assert.ok(!/password|hash|bcrypt|\$2[aby]\$/i.test(raw), "the export must never contain credentials");
+  });
+
+  test("delete my account: needs the password, removes everything, leaves others alone", async () => {
+    const doomed = await registerAndVerify("doomed@example.com");
+    const bystander = await registerAndVerify("bystander@example.com");
+    const admin = await adminClient();
+    for (const who of [doomed, bystander]) {
+      await who("POST", "/api/companies", {
+        json: { name: "Some Co", link: "some.example.com", email: "N/A", location: "inside" },
+      });
+      await who("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf("x")) });
+    }
+    const id = (await doomed("GET", "/api/me")).body.user.id;
+    const subId = (await doomed("GET", "/api/requirements")).body.items.find((i) => i.id === RESUME).submission.id;
+    await admin("POST", `/api/admin/submissions/${subId}/review`, { json: { status: "approved" } });
+    const count = async (table, col = "user_id") =>
+      Number((await db.execute({ sql: `SELECT COUNT(*) AS n FROM ${table} WHERE ${col} = ?`, args: [id] })).rows[0].n);
+
+    assert.equal((await client()("DELETE", "/api/me", { json: { password: PASSWORD } })).status, 401);
+    assert.equal((await doomed("DELETE", "/api/me", { json: { password: "not my password" } })).status, 400);
+    assert.equal((await doomed("DELETE", "/api/me", { json: {} })).status, 400);
+    assert.equal((await doomed("GET", "/api/me")).status, 200); // still there
+
+    assert.equal((await doomed("DELETE", "/api/me", { json: { password: PASSWORD } })).status, 200);
+    assert.equal((await doomed("GET", "/api/me")).status, 401);
+    assert.equal(
+      (await client()("POST", "/api/login", { json: { email: "doomed@example.com", password: PASSWORD } })).status,
+      401,
+    );
+    for (const table of ["companies", "submissions", "sessions", "user_tokens"])
+      assert.equal(await count(table), 0, `${table} should be empty`);
+    assert.equal(await count("users", "id"), 0);
+    assert.equal((await bystander("GET", "/api/companies")).body.companies.length, 1); // others untouched
+    assert.equal((await bystander("GET", "/api/me")).status, 200);
+  });
+
+  test("the only admin cannot delete their own account", async () => {
+    const admin = await adminClient();
+    const res = await admin("DELETE", "/api/me", { json: { password: PASSWORD } });
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /only admin/i);
+    assert.equal((await admin("GET", "/api/me")).status, 200);
+  });
+
+  test("an admin can erase a student on request, but not an admin or themselves", async () => {
+    const admin = await adminClient();
+    const student = await registerAndVerify("erase-me@example.com");
+    const other = await registerAndVerify("second-admin@example.com");
+    const adviser = await registerAndVerify("erase-adviser@example.com");
+    const studentId = (await student("GET", "/api/me")).body.user.id;
+    const otherId = (await other("GET", "/api/me")).body.user.id;
+    const adminId = (await admin("GET", "/api/me")).body.user.id;
+    await student("POST", "/api/companies", {
+      json: { name: "Gone Co", link: "gone.example.com", email: "N/A", location: "inside" },
+    });
+
+    assert.equal((await student("DELETE", `/api/admin/users/${studentId}`)).status, 403);
+    assert.equal((await adviser("DELETE", `/api/admin/users/${studentId}`)).status, 403);
+    assert.equal((await admin("DELETE", `/api/admin/users/${adminId}`)).status, 400); // own account: use Profile
+    assert.equal((await admin("DELETE", "/api/admin/users/999999")).status, 404);
+
+    await admin("PATCH", `/api/admin/users/${otherId}/role`, { json: { role: "admin" } });
+    assert.equal((await admin("DELETE", `/api/admin/users/${otherId}`)).status, 409); // demote first
+    await admin("PATCH", `/api/admin/users/${otherId}/role`, { json: { role: "student" } });
+
+    assert.equal((await admin("DELETE", `/api/admin/users/${studentId}`)).status, 200);
+    assert.equal((await student("GET", "/api/me")).status, 401);
+    const left = Number(
+      (await db.execute({ sql: "SELECT COUNT(*) AS n FROM companies WHERE user_id = ?", args: [studentId] })).rows[0].n,
+    );
+    assert.equal(left, 0);
+  });
+
+  test("no third-party requests: fonts and security policy are first-party only", async () => {
+    const c = client();
+    const font = await c("GET", "/fonts/geist-latin-wght-normal.woff2");
+    assert.equal(font.status, 200);
+    const csp = (await c("GET", "/healthz")).headers.get("content-security-policy");
+    assert.match(csp, /font-src 'self'(;|$)/);
+    assert.ok(
+      !/https?:|\*/.test(csp.replace("upgrade-insecure-requests", "")),
+      `CSP must not allow other origins: ${csp}`,
+    );
   });
 });

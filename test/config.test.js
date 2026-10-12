@@ -56,3 +56,19 @@ test("APP_URL works with or without https:// and a trailing slash", async () => 
   check("", "http://localhost:3000");
   check(undefined, "http://localhost:3000");
 });
+
+test("pages load nothing from other websites (fonts, scripts, styles, images)", () => {
+  const dir = new URL("public/", root);
+  const offenders = [];
+  for (const name of fs.readdirSync(dir)) {
+    if (!/\.(html|css|js)$/.test(name)) continue;
+    const text = fs.readFileSync(new URL(name, dir), "utf8");
+    const patterns = [
+      /<(?:link|script|img|iframe|source)\b[^>]*\b(?:src|href)=["']https?:\/\//gi, // embedded resources (links in <a> are fine)
+      /@import\s+(?:url\()?["']?https?:\/\//gi,
+      /url\(\s*["']?https?:\/\//gi,
+    ];
+    for (const re of patterns) for (const m of text.matchAll(re)) offenders.push(`${name}: ${m[0].slice(0, 70)}`);
+  }
+  assert.deepEqual(offenders, []);
+});

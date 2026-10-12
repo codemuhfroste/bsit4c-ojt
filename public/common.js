@@ -111,14 +111,18 @@ export function toast(text, kind = "ok") {
 }
 
 // Native <dialog> modal. `build(close)` returns the form element to show.
-export function openDialog(build) {
-  const dialog = h("dialog", { className: "modal" });
+export function openDialog(build, { dismissable = true, wide = false } = {}) {
+  const dialog = h("dialog", { className: wide ? "modal wide" : "modal" });
   const close = () => dialog.close();
   dialog.append(build(close));
   dialog.addEventListener("close", () => dialog.remove());
-  dialog.addEventListener("click", (e) => {
-    if (e.target === dialog) close(); // click on the backdrop
-  });
+  if (dismissable) {
+    dialog.addEventListener("click", (e) => {
+      if (e.target === dialog) close(); // click on the backdrop
+    });
+  } else {
+    dialog.addEventListener("cancel", (e) => e.preventDefault()); // Escape does nothing either
+  }
   document.body.append(dialog);
   dialog.showModal();
   return dialog;

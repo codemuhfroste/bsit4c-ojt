@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "../db.js";
 import { HttpError, ROLES, STAFF, endAllSessions, requireRole } from "../auth.js";
 import { publicUser } from "../auth.js";
+import { eraseUser } from "../accounts.js";
 import { parseDate, parseId, parseText } from "../validate.js";
 import { loadChecklist, shapeCompany } from "./checklist.js";
 
@@ -337,6 +338,18 @@ router.patch("/users/:id/role", requireRole("admin"), async (req, res) => {
   if (id === req.user.id) throw new HttpError(400, "You cannot change your own role.");
   const result = await db.execute({ sql: "UPDATE users SET role = ? WHERE id = ?", args: [role, id] });
   if (!result.rowsAffected) throw new HttpError(404, "User not found.");
+  res.json({ ok: true });
+});
+
+// Erasure request handled by an admin (for example, a student who asks by email). Admin accounts are demoted first.
+router.delete("/users/:id", requireRole("admin"), async (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === req.user.id) throw new HttpError(400, "Use Profile > Delete my account for your own account.");
+  const { rows } = await db.execute({ sql: "SELECT role FROM users WHERE id = ?", args: [id] });
+  if (!rows[0]) throw new HttpError(404, "User not found.");
+  if (rows[0].role === "admin")
+    throw new HttpError(409, "Change this admin to a student or adviser before deleting the account.");
+  await eraseUser(id);
   res.json({ ok: true });
 });
 

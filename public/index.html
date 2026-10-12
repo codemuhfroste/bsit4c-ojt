@@ -6,9 +6,6 @@
     <title>Sign in · BSIT 4C OJT Checklist</title>
     <meta name="description" content="Track and submit your OJT requirements for BSIT 4C." />
     <link rel="icon" href="/img/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" />
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css" />
   </head>
@@ -179,6 +176,14 @@
                 </span>
               </label>
               <ul class="hints" data-hints></ul>
+              <label class="check consent">
+                <input name="acceptPrivacy" type="checkbox" required />
+                <span>
+                  I have read the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Notice</a> and agree
+                  that my name, student ID, email, company list and uploaded files are processed as described there,
+                  including storage outside the Philippines.
+                </span>
+              </label>
               <div class="btn-row">
                 <button class="btn outline" type="button" data-back>Back</button>
                 <button class="btn" type="submit"><span class="label">Create account</span></button>
@@ -280,7 +285,7 @@
             <p class="msg" role="alert"></p>
           </form>
 
-          <p class="fine">BSIT 4C · On-the-Job Training</p>
+          <p class="fine">BSIT 4C · On-the-Job Training · <a href="/privacy.html">Privacy Notice</a></p>
         </div>
       </main>
     </div>
