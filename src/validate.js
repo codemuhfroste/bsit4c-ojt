@@ -39,3 +39,19 @@ export function parseDate(value) {
   }
   return value;
 }
+
+// A Facebook page or website. A missing scheme is added; only http(s) links are accepted.
+export function parseLink(value) {
+  let text = typeof value === "string" ? value.trim() : "";
+  if (!text) throw new HttpError(400, "Add the company's Facebook page or website.");
+  if (text.length > 300) throw new HttpError(400, "That link is too long.");
+  if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new HttpError(400, "That link does not look valid.");
+  }
+  if (!url.hostname.includes(".")) throw new HttpError(400, "That link does not look valid.");
+  return url.href;
+}

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "../db.js";
 import { HttpError, STAFF, requireAuth, requireVerified } from "../auth.js";
 import { hasExpectedSignature, upload } from "../uploads.js";
-import { parseId } from "../validate.js";
+import { parseEmail, parseId, parseLink, parseText } from "../validate.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -15,6 +15,8 @@ const shapeRequirement = (r) => ({
   sortOrder: Number(r.sort_order),
   dueDate: r.due_date,
   requiresFile: Boolean(r.requires_file),
+  kind: r.kind,
+  available: Boolean(r.available),
   submission: r.sub_id
     ? {
         id: Number(r.sub_id),
@@ -35,20 +37,25 @@ router.get("/requirements", async (req, res) => {
     args: [req.user.id],
   });
   const items = rows.map(shapeRequirement);
-  const count = (status) => items.filter((i) => i.submission?.status === status).length;
+  const open = items.filter((i) => i.available); // closed ("N/A for now") requirements do not count
+  const count = (status) => open.filter((i) => i.submission?.status === status).length;
   res.json({
     items,
-    progress: { total: items.length, submitted: items.filter((i) => i.submission).length, approved: count("approved") },
+    progress: { total: open.length, submitted: open.filter((i) => i.submission).length, approved: count("approved") },
   });
 });
 
 // Submitting needs a verified email. The file is optional only for requirements that do not require one.
 router.post("/requirements/:id/submit", requireVerified, upload.single("file"), async (req, res) => {
-  const file = req.file;
   const id = parseId(req.params.id);
   const { rows } = await db.execute({ sql: "SELECT * FROM requirements WHERE id = ?", args: [id] });
   const requirement = rows[0];
   if (!requirement) throw new HttpError(404, "Requirement not found.");
+  if (!requirement.available) throw new HttpError(409, "This requirement is not open yet.");
+  if (requirement.kind === "companies") {
+    throw new HttpError(400, "Your company list is submitted automatically when you add a company.");
+  }
+  const file = req.file;
   if (requirement.requires_file && !file) throw new HttpError(400, "Attach a file for this requirement.");
   if (file && !hasExpectedSignature(file)) throw new HttpError(400, "That file does not match its type.");
 
@@ -86,10 +93,12 @@ router.post("/requirements/:id/submit", requireVerified, upload.single("file"), 
 router.delete("/requirements/:id/submission", requireVerified, async (req, res) => {
   const id = parseId(req.params.id);
   const { rows } = await db.execute({
-    sql: "SELECT id, status FROM submissions WHERE user_id = ? AND requirement_id = ?",
+    sql: `SELECT s.id, s.status, r.kind FROM submissions s JOIN requirements r ON r.id = s.requirement_id
+          WHERE s.user_id = ? AND s.requirement_id = ?`,
     args: [req.user.id, id],
   });
   if (!rows[0]) throw new HttpError(404, "Nothing submitted for this requirement.");
+  if (rows[0].kind === "companies") throw new HttpError(400, "Remove the companies from your list instead.");
   if (rows[0].status === "approved") throw new HttpError(409, "An approved submission cannot be withdrawn.");
   await db.execute({ sql: "DELETE FROM submissions WHERE id = ?", args: [rows[0].id] });
   res.json({ ok: true });
@@ -109,6 +118,148 @@ router.get("/submissions/:id/file", async (req, res) => {
   res.type(sub.mime_type);
   res.attachment(sub.file_name || "submission");
   res.send(Buffer.from(sub.file_data));
+});
+
+// ---- Companies (the "Find OJT companies" task) ----
+
+const MAX_COMPANIES = 20;
+
+const shapeCompany = (c) => ({
+  id: Number(c.id),
+  name: c.name,
+  link: c.link,
+  email: c.email,
+  location: c.location,
+  applied: Boolean(c.applied),
+  response: c.response,
+  createdAt: c.created_at,
+});
+
+// The company's contact email is required, but "N/A" is accepted when it has none (stored as "").
+function parseCompanyEmail(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) throw new HttpError(400, "Add the company's email, or enter N/A if it has none.");
+  return /^n\/?a$/i.test(text) ? "" : parseEmail(text);
+}
+
+const RESPONSES = ["none", "accepted", "denied"];
+
+// A response only makes sense once the student has applied, so it resets to "none" otherwise.
+function parseResponse(value, applied) {
+  const response = value ?? "none";
+  if (!RESPONSES.includes(response)) throw new HttpError(400, "Response must be none, accepted or denied.");
+  return applied ? response : "none";
+}
+
+function parseCompany(body) {
+  const location = body?.location;
+  if (location !== "inside" && location !== "outside") throw new HttpError(400, "Choose inside or outside Legazpi.");
+  const applied = body?.applied === true ? 1 : 0;
+  return {
+    name: parseText(body?.name, "Company name", 150, { required: true }),
+    link: parseLink(body?.link),
+    email: parseCompanyEmail(body?.email),
+    location,
+    applied,
+    response: parseResponse(body?.response, applied),
+  };
+}
+
+// The "Find OJT companies" submission follows the list automatically: it counts as submitted as soon as the student
+// has at least one company, and goes back to "to do" when the list is emptied. Approved stays approved, and
+// students can keep adding companies afterwards.
+async function syncCompanySubmission(userId) {
+  const { rows: found } = await db.execute("SELECT id FROM requirements WHERE kind = 'companies' ORDER BY id LIMIT 1");
+  if (!found[0]) return;
+  const requirementId = Number(found[0].id);
+  const { rows } = await db.execute({ sql: "SELECT COUNT(*) AS n FROM companies WHERE user_id = ?", args: [userId] });
+
+  if (Number(rows[0].n) > 0) {
+    await db.execute({
+      sql: `INSERT INTO submissions (user_id, requirement_id, status) VALUES (?1, ?2, 'submitted')
+            ON CONFLICT (user_id, requirement_id) DO UPDATE SET
+              status = CASE WHEN status = 'approved' THEN 'approved' ELSE 'submitted' END,
+              note = CASE WHEN status = 'approved' THEN note ELSE '' END,
+              updated_at = datetime('now')`,
+      args: [userId, requirementId],
+    });
+  } else {
+    await db.execute({
+      sql: "DELETE FROM submissions WHERE user_id = ? AND requirement_id = ? AND status != 'approved'",
+      args: [userId, requirementId],
+    });
+  }
+}
+
+router.get("/companies", async (req, res) => {
+  const { rows } = await db.execute({
+    sql: "SELECT * FROM companies WHERE user_id = ? ORDER BY id",
+    args: [req.user.id],
+  });
+  res.json({ companies: rows.map(shapeCompany) });
+});
+
+router.post("/companies", async (req, res) => {
+  const c = parseCompany(req.body);
+  const { rows } = await db.execute({
+    sql: "SELECT COUNT(*) AS n FROM companies WHERE user_id = ?",
+    args: [req.user.id],
+  });
+  if (Number(rows[0].n) >= MAX_COMPANIES) throw new HttpError(400, `You can list up to ${MAX_COMPANIES} companies.`);
+  const result = await db.execute({
+    sql: "INSERT INTO companies (user_id, name, link, email, location, applied, response) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [req.user.id, c.name, c.link, c.email, c.location, c.applied, c.response],
+  });
+  await syncCompanySubmission(req.user.id);
+  res.status(201).json({ ok: true, id: Number(result.lastInsertRowid) });
+});
+
+router.put("/companies/:id", async (req, res) => {
+  const id = parseId(req.params.id);
+  const c = parseCompany(req.body);
+  const result = await db.execute({
+    sql: "UPDATE companies SET name = ?, link = ?, email = ?, location = ?, applied = ?, response = ? WHERE id = ? AND user_id = ?",
+    args: [c.name, c.link, c.email, c.location, c.applied, c.response, id, req.user.id],
+  });
+  if (!result.rowsAffected) throw new HttpError(404, "Company not found.");
+  await syncCompanySubmission(req.user.id);
+  res.json({ ok: true });
+});
+
+// Quick one-field changes (the double-click toggles): location, applied and response only.
+router.patch("/companies/:id", async (req, res) => {
+  const id = parseId(req.params.id);
+  const { location, applied, response } = req.body ?? {};
+  if (location !== undefined && location !== "inside" && location !== "outside") {
+    throw new HttpError(400, "Choose inside or outside Legazpi.");
+  }
+  if (response !== undefined && !RESPONSES.includes(response)) {
+    throw new HttpError(400, "Response must be none, accepted or denied.");
+  }
+  if (applied !== undefined && typeof applied !== "boolean") throw new HttpError(400, "Applied must be true or false.");
+
+  // One statement: omitted fields keep their value, and a response only sticks while applied.
+  const result = await db.execute({
+    sql: `UPDATE companies SET
+            location = COALESCE(?1, location),
+            applied = COALESCE(?2, applied),
+            response = CASE WHEN COALESCE(?2, applied) = 0 THEN 'none' ELSE COALESCE(?3, response) END
+          WHERE id = ?4 AND user_id = ?5`,
+    args: [location ?? null, applied === undefined ? null : applied ? 1 : 0, response ?? null, id, req.user.id],
+  });
+  if (!result.rowsAffected) throw new HttpError(404, "Company not found.");
+  res.json({ ok: true });
+});
+
+router.delete("/companies/:id", async (req, res) => {
+  const id = parseId(req.params.id);
+  const result = await db.execute({
+    sql: "DELETE FROM companies WHERE id = ? AND user_id = ?",
+    args: [id, req.user.id],
+  });
+  if (!result.rowsAffected) throw new HttpError(404, "Company not found.");
+  await syncCompanySubmission(req.user.id);
+  res.json({ ok: true });
 });
 
 export default router;

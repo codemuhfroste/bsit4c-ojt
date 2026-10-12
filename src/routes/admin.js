@@ -14,6 +14,7 @@ function parseRequirement(body) {
     phase: parseText(body?.phase, "Phase", 60) || "General",
     dueDate: parseDate(body?.dueDate),
     requiresFile: body?.requiresFile === false ? 0 : 1,
+    available: body?.available === false ? 0 : 1,
     sortOrder,
   };
 }
@@ -23,8 +24,8 @@ function parseRequirement(body) {
 router.post("/requirements", requireRole("admin"), async (req, res) => {
   const r = parseRequirement(req.body);
   const result = await db.execute({
-    sql: "INSERT INTO requirements (title, description, phase, due_date, requires_file, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
-    args: [r.title, r.description, r.phase, r.dueDate, r.requiresFile, r.sortOrder],
+    sql: "INSERT INTO requirements (title, description, phase, due_date, requires_file, available, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    args: [r.title, r.description, r.phase, r.dueDate, r.requiresFile, r.available, r.sortOrder],
   });
   res.status(201).json({ ok: true, id: Number(result.lastInsertRowid) });
 });
@@ -34,8 +35,8 @@ router.put("/requirements/:id", requireRole("admin"), async (req, res) => {
   const r = parseRequirement(req.body);
   const result = await db.execute({
     sql: `UPDATE requirements
-          SET title = ?, description = ?, phase = ?, due_date = ?, requires_file = ?, sort_order = ? WHERE id = ?`,
-    args: [r.title, r.description, r.phase, r.dueDate, r.requiresFile, r.sortOrder, id],
+          SET title = ?, description = ?, phase = ?, due_date = ?, requires_file = ?, available = ?, sort_order = ? WHERE id = ?`,
+    args: [r.title, r.description, r.phase, r.dueDate, r.requiresFile, r.available, r.sortOrder, id],
   });
   if (!result.rowsAffected) throw new HttpError(404, "Requirement not found.");
   res.json({ ok: true });
@@ -57,12 +58,15 @@ router.delete("/requirements/:id", requireRole("admin"), async (req, res) => {
 // ---- Students and review (adviser + admin) ----
 
 router.get("/users", requireRole(...STAFF), async (_req, res) => {
-  const total = Number((await db.execute("SELECT COUNT(*) AS n FROM requirements")).rows[0].n);
+  const total = Number((await db.execute("SELECT COUNT(*) AS n FROM requirements WHERE available = 1")).rows[0].n);
   const { rows } = await db.execute(`
     SELECT u.id, u.email, u.role, u.full_name, u.student_id, u.email_verified_at,
            COUNT(s.id) AS submitted,
            COALESCE(SUM(s.status = 'approved'), 0) AS approved
-    FROM users u LEFT JOIN submissions s ON s.user_id = u.id
+    FROM users u
+    LEFT JOIN (
+      SELECT s.* FROM submissions s JOIN requirements r ON r.id = s.requirement_id WHERE r.available = 1
+    ) s ON s.user_id = u.id
     GROUP BY u.id ORDER BY u.full_name, u.email`);
   res.json({
     totalRequirements: total,
@@ -93,7 +97,7 @@ router.get("/submissions", requireRole(...STAFF), async (req, res) => {
   }
   const { rows } = await db.execute({
     sql: `SELECT s.id, s.status, s.note, s.file_name, s.updated_at, u.email, u.full_name, u.student_id,
-                 r.title AS requirement
+                 s.user_id, r.title AS requirement, r.kind
           FROM submissions s
           JOIN users u ON u.id = s.user_id
           JOIN requirements r ON r.id = s.requirement_id
@@ -101,6 +105,28 @@ router.get("/submissions", requireRole(...STAFF), async (req, res) => {
           ORDER BY s.updated_at DESC LIMIT 200`,
     args,
   });
+  // Company-list submissions show the student's companies instead of a file.
+  const companyOwners = [...new Set(rows.filter((s) => s.kind === "companies").map((s) => Number(s.user_id)))];
+  const byUser = new Map();
+  if (companyOwners.length) {
+    const { rows: list } = await db.execute({
+      sql: `SELECT user_id, name, link, email, location, applied, response FROM companies
+            WHERE user_id IN (${companyOwners.map(() => "?").join(",")}) ORDER BY id`,
+      args: companyOwners,
+    });
+    for (const c of list) {
+      const key = Number(c.user_id);
+      const entry = {
+        name: c.name,
+        link: c.link,
+        email: c.email,
+        location: c.location,
+        applied: Boolean(c.applied),
+        response: c.response,
+      };
+      byUser.set(key, [...(byUser.get(key) ?? []), entry]);
+    }
+  }
   res.json({
     submissions: rows.map((s) => ({
       id: Number(s.id),
@@ -112,6 +138,8 @@ router.get("/submissions", requireRole(...STAFF), async (req, res) => {
       fullName: s.full_name,
       studentId: s.student_id,
       requirement: s.requirement,
+      kind: s.kind,
+      companies: s.kind === "companies" ? (byUser.get(Number(s.user_id)) ?? []) : undefined,
     })),
   });
 });

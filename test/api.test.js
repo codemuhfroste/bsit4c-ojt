@@ -8,6 +8,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ojt-test-"));
 process.env.NODE_ENV = "test";
 process.env.TURSO_DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
 process.env.ADMIN_EMAILS = "admin@example.com";
+process.env.RATE_LIMIT_SCALE = "100"; // the suite signs up far more accounts than one real client would
 delete process.env.SMTP_URL;
 
 const { createApp } = await import("../src/app.js");
@@ -15,6 +16,8 @@ const { migrate, db } = await import("../src/db.js");
 const { outbox } = await import("../src/mailer.js");
 
 const PASSWORD = "correct horse";
+const RESUME = 5; // seeded id of "Resume / CV", one of the two requirements open for now
+const COMPANIES = 9; // seeded id of "Find OJT companies"
 let server;
 let base;
 
@@ -50,6 +53,16 @@ async function registerAndVerify(email) {
   const ver = await c("POST", "/api/verify", { json: { token: lastMailToken(email, "verify") } });
   assert.equal(ver.status, 200);
   return c;
+}
+
+// One shared admin session keeps the suite under the login rate limit.
+let adminSession;
+async function adminClient() {
+  if (!adminSession) {
+    adminSession = client();
+    await adminSession("POST", "/api/login", { json: { email: "admin@example.com", password: PASSWORD } });
+  }
+  return adminSession;
 }
 
 const pdf = (text = "hello") => new Blob([`%PDF-1.4\n${text}`], { type: "application/pdf" });
@@ -184,38 +197,46 @@ describe("checklist", () => {
     assert.equal((await client()("GET", "/api/requirements")).status, 401);
     const c = await registerAndVerify("list@example.com");
     const { body } = await c("GET", "/api/requirements");
-    assert.ok(body.items.length >= 8);
-    assert.deepEqual([...new Set(body.items.map((i) => i.phase))], ["Before OJT", "During OJT", "After OJT"]);
+    assert.ok(body.items.length >= 9);
+    assert.deepEqual(
+      [...new Set(body.items.map((i) => i.phase))],
+      ["Current tasks", "Before OJT", "During OJT", "After OJT"],
+    );
+    // Only the two current tasks are open; everything else is "N/A for now" and not counted.
+    assert.deepEqual(
+      body.items.filter((i) => i.available).map((i) => i.title),
+      ["Find OJT companies", "Resume / CV"],
+    );
+    assert.equal(body.progress.total, 2);
     assert.equal(body.progress.approved, 0);
   });
 
   test("unverified users cannot submit", async () => {
     const c = client();
     await c("POST", "/api/register", { json: { email: "unverified@example.com", password: PASSWORD } });
-    const res = await c("POST", "/api/requirements/1/submit", { form: upload(pdf()) });
+    const res = await c("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf()) });
     assert.equal(res.status, 403);
   });
 
   test("validates uploads", async () => {
     const c = await registerAndVerify("upload@example.com");
-    assert.equal((await c("POST", "/api/requirements/1/submit", { form: new FormData() })).status, 400);
+    assert.equal((await c("POST", `/api/requirements/${RESUME}/submit`, { form: new FormData() })).status, 400);
     const disguised = upload(new Blob(["not really a pdf"], { type: "application/pdf" }));
-    assert.equal((await c("POST", "/api/requirements/1/submit", { form: disguised })).status, 400);
+    assert.equal((await c("POST", `/api/requirements/${RESUME}/submit`, { form: disguised })).status, 400);
     const wrongType = upload(new Blob(["x"], { type: "text/html" }), "x.html");
-    assert.equal((await c("POST", "/api/requirements/1/submit", { form: wrongType })).status, 400);
+    assert.equal((await c("POST", `/api/requirements/${RESUME}/submit`, { form: wrongType })).status, 400);
     const huge = upload(new Blob(["%PDF", Buffer.alloc(6 * 1024 * 1024)], { type: "application/pdf" }));
-    assert.equal((await c("POST", "/api/requirements/1/submit", { form: huge })).status, 413);
+    assert.equal((await c("POST", `/api/requirements/${RESUME}/submit`, { form: huge })).status, 413);
   });
 
   test("submit, review, download and permissions", async () => {
     const student = await registerAndVerify("student@example.com");
     const other = await registerAndVerify("other@example.com");
-    const admin = client();
-    await admin("POST", "/api/login", { json: { email: "admin@example.com", password: PASSWORD } });
+    const admin = await adminClient();
 
-    const sub = await student("POST", "/api/requirements/1/submit", { form: upload(pdf("v1")) });
+    const sub = await student("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf("v1")) });
     assert.equal(sub.status, 200);
-    const item = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === 1);
+    const item = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === RESUME);
     assert.equal(item.submission.status, "submitted");
     const subId = item.submission.id;
 
@@ -234,12 +255,15 @@ describe("checklist", () => {
         .status,
       200,
     );
-    const rejected = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === 1);
+    const rejected = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === RESUME);
     assert.equal(rejected.submission.status, "rejected");
     assert.equal(rejected.submission.note, "Blurry");
 
     // Re-upload replaces the old file on disk and resets the status.
-    assert.equal((await student("POST", "/api/requirements/1/submit", { form: upload(pdf("v2")) })).status, 200);
+    assert.equal(
+      (await student("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf("v2")) })).status,
+      200,
+    );
     const replaced = await student("GET", `/api/submissions/${subId}/file`);
     assert.match(Buffer.from(replaced.body).toString(), /v2/);
     const queue = await admin("GET", "/api/admin/submissions?status=submitted");
@@ -249,8 +273,8 @@ describe("checklist", () => {
       (await admin("POST", `/api/admin/submissions/${subId}/review`, { json: { status: "approved" } })).status,
       200,
     );
-    assert.equal((await student("POST", "/api/requirements/1/submit", { form: upload(pdf()) })).status, 409);
-    assert.equal((await student("DELETE", "/api/requirements/1/submission")).status, 409);
+    assert.equal((await student("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf()) })).status, 409);
+    assert.equal((await student("DELETE", `/api/requirements/${RESUME}/submission`)).status, 409);
 
     const users = await admin("GET", "/api/admin/users");
     assert.equal(users.body.users.find((u) => u.email === "student@example.com").approved, 1);
@@ -258,19 +282,18 @@ describe("checklist", () => {
 
   test("withdrawing removes the submission and its file", async () => {
     const c = await registerAndVerify("withdraw@example.com");
-    await c("POST", "/api/requirements/2/submit", { form: upload(pdf("gone")) });
-    const sub = (await c("GET", "/api/requirements")).body.items.find((i) => i.id === 2).submission;
+    await c("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf("gone")) });
+    const sub = (await c("GET", "/api/requirements")).body.items.find((i) => i.id === RESUME).submission;
     assert.equal((await c("GET", `/api/submissions/${sub.id}/file`)).status, 200);
-    assert.equal((await c("DELETE", "/api/requirements/2/submission")).status, 200);
+    assert.equal((await c("DELETE", `/api/requirements/${RESUME}/submission`)).status, 200);
     assert.equal((await c("GET", `/api/submissions/${sub.id}/file`)).status, 404); // file is gone with the row
-    assert.equal((await c("DELETE", "/api/requirements/2/submission")).status, 404);
+    assert.equal((await c("DELETE", `/api/requirements/${RESUME}/submission`)).status, 404);
   });
 });
 
 describe("admin", () => {
   test("manages requirements and roles", async () => {
-    const admin = client();
-    await admin("POST", "/api/login", { json: { email: "admin@example.com", password: PASSWORD } });
+    const admin = await adminClient();
     const student = await registerAndVerify("promote@example.com");
 
     assert.equal((await student("POST", "/api/admin/requirements", { json: { title: "Nope" } })).status, 403);
@@ -305,5 +328,207 @@ describe("admin", () => {
 
     const adminId = (await admin("GET", "/api/me")).body.user.id;
     assert.equal((await admin("PATCH", `/api/admin/users/${adminId}/role`, { json: { role: "student" } })).status, 400);
+  });
+});
+
+describe("current tasks", () => {
+  test("closed requirements cannot be submitted", async () => {
+    const c = await registerAndVerify("closed@example.com");
+    const res = await c("POST", "/api/requirements/1/submit", { form: upload(pdf()) });
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /not open/i);
+  });
+
+  test("company list: validation, automatic submission, review", async () => {
+    const student = await registerAndVerify("shopper@example.com");
+    const other = await registerAndVerify("shopper2@example.com");
+    const admin = await adminClient();
+    const add = (c, body) => c("POST", "/api/companies", { json: { email: "N/A", ...body } });
+    const state = async (c) =>
+      (await c("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission;
+
+    // Nothing is submitted until a company exists, and there is no manual submit for this task.
+    assert.equal(await state(student), null);
+    assert.equal(
+      (await student("POST", `/api/requirements/${COMPANIES}/submit`, { form: new FormData() })).status,
+      400,
+    );
+
+    assert.equal((await add(student, { name: "", link: "acme.com", location: "inside" })).status, 400);
+    assert.equal((await add(student, { name: "Acme", link: "", location: "inside" })).status, 400);
+    assert.equal((await add(student, { name: "Acme", link: "javascript:alert(1)", location: "inside" })).status, 400);
+    assert.equal((await add(student, { name: "Acme", link: "acme.com", location: "mars" })).status, 400);
+    assert.equal(await state(student), null); // failed attempts submit nothing
+
+    // The first valid company submits the task by itself.
+    const first = await add(student, { name: "Acme Corp", link: "facebook.com/acme", location: "inside" });
+    assert.equal(first.status, 201);
+    assert.equal((await state(student)).status, "submitted");
+    assert.equal(
+      (await add(student, { name: "Beta IT", link: "https://beta.example.com", location: "outside" })).status,
+      201,
+    );
+
+    const list = (await student("GET", "/api/companies")).body.companies;
+    assert.deepEqual(
+      list.map((c) => [c.name, c.link, c.location]),
+      [
+        ["Acme Corp", "https://facebook.com/acme", "inside"],
+        ["Beta IT", "https://beta.example.com/", "outside"],
+      ],
+    );
+    assert.equal((await other("GET", "/api/companies")).body.companies.length, 0);
+    assert.equal((await other("DELETE", `/api/companies/${first.body.id}`)).status, 404); // not theirs
+    assert.equal((await student("DELETE", `/api/requirements/${COMPANIES}/submission`)).status, 400); // no manual withdraw
+
+    assert.equal(
+      (
+        await student("PUT", `/api/companies/${first.body.id}`, {
+          json: { name: "Acme Inc", link: "acme.com", email: "N/A", location: "outside" },
+        })
+      ).status,
+      200,
+    );
+
+    // Staff see the list inside the review queue.
+    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    const entry = queue.find((s) => s.email === "shopper@example.com");
+    assert.equal(entry.kind, "companies");
+    assert.deepEqual(
+      entry.companies.map((c) => c.name),
+      ["Acme Inc", "Beta IT"],
+    );
+
+    // Rejected -> adding another company sends it back for review.
+    await admin("POST", `/api/admin/submissions/${entry.id}/review`, {
+      json: { status: "rejected", note: "Need more" },
+    });
+    assert.equal((await state(student)).status, "rejected");
+    assert.equal((await add(student, { name: "Gamma", link: "gamma.example.com", location: "inside" })).status, 201);
+    assert.equal((await state(student)).status, "submitted");
+
+    // Approved stays approved, and students can still add, edit and remove companies.
+    await admin("POST", `/api/admin/submissions/${entry.id}/review`, { json: { status: "approved" } });
+    assert.equal((await add(student, { name: "Delta", link: "delta.example.com", location: "outside" })).status, 201);
+    assert.equal((await state(student)).status, "approved");
+    assert.equal((await student("DELETE", `/api/companies/${first.body.id}`)).status, 200);
+    assert.equal((await student("GET", "/api/companies")).body.companies.length, 3);
+  });
+
+  test("company email (N/A allowed) and applied flag", async () => {
+    const student = await registerAndVerify("applies@example.com");
+    const admin = await adminClient();
+    const post = (body) => student("POST", "/api/companies", { json: body });
+    const base = { name: "Hire Me Inc", link: "hireme.example.com", location: "inside" };
+
+    assert.equal((await post(base)).status, 400); // email must be given, or N/A
+    assert.equal((await post({ ...base, email: "" })).status, 400);
+    assert.equal((await post({ ...base, email: "not-an-email" })).status, 400);
+
+    const none = await post({ ...base, email: "n/a" });
+    assert.equal(none.status, 201);
+    const withMail = await post({ ...base, name: "Mailed Co", email: "HR@Mailed.example.com", applied: true });
+    assert.equal(withMail.status, 201);
+
+    const list = (await student("GET", "/api/companies")).body.companies;
+    assert.deepEqual(
+      list.map((c) => [c.name, c.email, c.applied]),
+      [
+        ["Hire Me Inc", "", false],
+        ["Mailed Co", "hr@mailed.example.com", true],
+      ],
+    );
+
+    // Flip "applied" the way the checklist toggle does.
+    const toggled = await student("PUT", `/api/companies/${none.body.id}`, {
+      json: { ...base, email: "N/A", applied: true },
+    });
+    assert.equal(toggled.status, 200);
+    assert.equal((await student("GET", "/api/companies")).body.companies[0].applied, true);
+
+    // Reviewers see both fields.
+    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    const entry = queue.find((x) => x.email === "applies@example.com");
+    assert.deepEqual(
+      entry.companies.map((c) => [c.email, c.applied]),
+      [
+        ["", true],
+        ["hr@mailed.example.com", true],
+      ],
+    );
+  });
+
+  test("quick toggles: location, applied and response", async () => {
+    const student = await registerAndVerify("toggles@example.com");
+    const other = await registerAndVerify("toggles2@example.com");
+    const admin = await adminClient();
+    const made = await student("POST", "/api/companies", {
+      json: { name: "Toggle Co", link: "toggle.example.com", email: "N/A", location: "inside" },
+    });
+    const id = made.body.id;
+    const patch = (c, body) => c("PATCH", `/api/companies/${id}`, { json: body });
+    const get = async () => (await student("GET", "/api/companies")).body.companies[0];
+
+    // New companies start as: not applied, no response.
+    assert.deepEqual([(await get()).applied, (await get()).response], [false, "none"]);
+
+    assert.equal((await patch(student, { location: "outside" })).status, 200);
+    assert.equal((await get()).location, "outside");
+    assert.equal((await patch(student, { location: "mars" })).status, 400);
+
+    // A response cannot be recorded before applying.
+    assert.equal((await patch(student, { response: "accepted" })).status, 200);
+    assert.equal((await get()).response, "none");
+
+    assert.equal((await patch(student, { applied: true })).status, 200);
+    assert.equal((await patch(student, { response: "accepted" })).status, 200);
+    assert.deepEqual([(await get()).applied, (await get()).response], [true, "accepted"]);
+    assert.equal((await patch(student, { response: "denied" })).status, 200);
+    assert.equal((await get()).response, "denied");
+    assert.equal((await patch(student, { response: "maybe" })).status, 400);
+
+    // Reviewers see the response.
+    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    const entry = queue.find((x) => x.email === "toggles@example.com");
+    assert.deepEqual(
+      entry.companies.map((c) => [c.location, c.applied, c.response]),
+      [["outside", true, "denied"]],
+    );
+
+    // Un-applying clears the response; other students cannot touch it.
+    assert.equal((await patch(student, { applied: false })).status, 200);
+    assert.deepEqual([(await get()).applied, (await get()).response], [false, "none"]);
+    assert.equal((await patch(other, { applied: true })).status, 404);
+  });
+
+  test("emptying the company list puts the task back to to-do", async () => {
+    const c = await registerAndVerify("empties@example.com");
+    const { body } = await c("POST", "/api/companies", {
+      json: { name: "Solo Co", link: "solo.example.com", email: "N/A", location: "inside" },
+    });
+    const sub = async () => (await c("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission;
+    assert.equal((await sub()).status, "submitted");
+    assert.equal((await c("DELETE", `/api/companies/${body.id}`)).status, 200);
+    assert.equal(await sub(), null);
+  });
+
+  test("admins can close and reopen a requirement", async () => {
+    const admin = await adminClient();
+    const student = await registerAndVerify("reopen@example.com");
+    const body = { title: "Seminar certificate", requiresFile: false, available: false };
+    const { body: created } = await admin("POST", "/api/admin/requirements", { json: body });
+    const find = async () => (await student("GET", "/api/requirements")).body.items.find((i) => i.id === created.id);
+
+    assert.equal((await find()).available, false);
+    assert.equal(
+      (await student("POST", `/api/requirements/${created.id}/submit`, { form: new FormData() })).status,
+      409,
+    );
+    await admin("PUT", `/api/admin/requirements/${created.id}`, { json: { ...body, available: true } });
+    assert.equal((await find()).available, true);
+    assert.equal(
+      (await student("POST", `/api/requirements/${created.id}/submit`, { form: new FormData() })).status,
+      200,
+    );
   });
 });

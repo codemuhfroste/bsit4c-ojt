@@ -380,7 +380,7 @@ select option {
   text-align: center;
   color: var(--muted);
 }
-.empty svg {
+.empty svg:not(.icon) {
   width: 150px;
   height: auto;
   margin-bottom: 6px;
@@ -1717,4 +1717,133 @@ dialog.modal .actions {
 }
 .field .input {
   margin-top: 6px;
+}
+
+/* ---------- N/A requirements + company list ---------- */
+.pill.na {
+  color: var(--muted);
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+}
+.activity.na {
+  opacity: 0.62;
+}
+.activity.na h3 {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: var(--muted);
+}
+.activity.na .act-icon {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.activity.na .desc {
+  text-decoration: line-through;
+}
+.node.na {
+  color: var(--muted);
+  border-style: dashed;
+}
+.step.na button {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.company-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.company-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.company-list .grow {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.company-list .grow a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seg2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+.seg2 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.seg2 button[aria-checked="true"] {
+  color: var(--primary-ink);
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+.panel .field {
+  margin-bottom: 4px;
+}
+
+/* ---------- Company tags (double-click to change) ---------- */
+.company-list li {
+  flex-wrap: wrap;
+}
+.company-list .grow {
+  min-width: 190px;
+}
+.company-list .grow a,
+.company-list .grow .mail {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.82rem;
+}
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.pill.tog {
+  font-family: inherit;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    transform 0.1s,
+    box-shadow 0.15s;
+}
+.pill.tog:hover {
+  box-shadow: 0 0 0 2px var(--border-strong);
+}
+.pill.tog:active {
+  transform: scale(0.95);
+}
+.hint {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
 }

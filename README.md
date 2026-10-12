@@ -29,6 +29,21 @@ automatically. Admins can then promote others to `adviser` or `admin` from the *
 With `SMTP_URL` set (e.g. `smtps://user:pass@smtp.example.com`), verification and password-reset emails are sent for
 real. Without it they are printed to the server console, so in development copy the link from there.
 
+## Current tasks
+
+The coordinator's first two tasks are open; every other requirement is shown crossed out as **N/A for now**:
+
+1. **Find OJT companies** – each student lists companies with their Facebook page or website, the company email
+   (or N/A), and whether they are inside or outside Legazpi. Each company also tracks **Applied / Not applied** and,
+   once applied, the company's response: **No response / Accepted / Denied**. Double-click any of those tags (or
+   focus one and press Enter) to flip it. There is no separate submit step: the task counts as submitted as soon as
+   one company is added, students can keep adding (or editing/removing) companies at any time, and advisers see
+   the current list in the review queue.
+2. **Resume / CV** – a PDF or image upload.
+
+Admins can open or close any requirement (**Mark N/A** / **Open it** on the Requirements tab) as the coordinator
+releases the next tasks. Closed requirements cannot be submitted and are not counted in progress.
+
 ## Roles
 
 | Role      | Can do                                                                          |
@@ -59,12 +74,13 @@ All endpoints are JSON under `/api`. Sessions use an HttpOnly `sid` cookie. Erro
 
 **Checklist**
 
-| Endpoint                              | Notes                                                       |
-| ------------------------------------- | ----------------------------------------------------------- |
-| `GET /requirements`                   | Requirements with your submission status, plus progress     |
-| `POST /requirements/:id/submit`       | `multipart/form-data`, optional `file` (PDF/PNG/JPEG, 4 MB) |
-| `DELETE /requirements/:id/submission` | Withdraw (not allowed once approved)                        |
-| `GET /submissions/:id/file`           | Owner or staff                                              |
+| Endpoint                                                 | Notes                                                                                                                                                                                 |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /requirements`                                      | Requirements with your submission status, plus progress                                                                                                                               |
+| `POST /requirements/:id/submit`                          | `multipart/form-data`, optional `file` (PDF/PNG/JPEG, 4 MB)                                                                                                                           |
+| `DELETE /requirements/:id/submission`                    | Withdraw (not allowed once approved)                                                                                                                                                  |
+| `GET /submissions/:id/file`                              | Owner or staff                                                                                                                                                                        |
+| `GET/POST /companies`, `PUT/PATCH/DELETE /companies/:id` | Your own company list: `name`, `link`, `email` (or `N/A`), `location` (`inside`/`outside`), `applied`, `response` (`none`/`accepted`/`denied`). `PATCH` changes just those last three |
 
 **Staff** (`/api/admin`)
 

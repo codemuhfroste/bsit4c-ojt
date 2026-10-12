@@ -17,7 +17,13 @@ import { sendPasswordReset, sendVerification } from "../mailer.js";
 import { parseEmail, parsePassword, parseText } from "../validate.js";
 
 const HOUR = 60 * 60 * 1000;
-const limiter = (limit) => rateLimit({ windowMs: 15 * 60 * 1000, limit, standardHeaders: true, legacyHeaders: false });
+const limiter = (limit) =>
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: limit * (Number(process.env.RATE_LIMIT_SCALE) || 1), // tests raise this; production uses 1
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
 // Compared against when the email is unknown so response time does not reveal which emails exist.
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);

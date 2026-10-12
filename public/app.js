@@ -18,8 +18,24 @@ const STATUS = {
   submitted: { label: "In review", icon: "clock" },
   rejected: { label: "Needs changes", icon: "alert" },
   approved: { label: "Approved", icon: "check" },
+  na: { label: "N/A for now", icon: "minus" },
 };
-const statusOf = (item) => item.submission?.status ?? "todo";
+// Closed requirements ("N/A for now") are shown crossed out and cannot be submitted.
+const statusOf = (item) => (!item.available ? "na" : (item.submission?.status ?? "todo"));
+const LOCATION = { inside: "Inside Legazpi", outside: "Outside Legazpi" };
+const companyCount = (n) => `${n} ${n === 1 ? "company" : "companies"}`;
+
+// "https://www.facebook.com/acme/" -> "facebook.com/acme"
+function prettyLink(href) {
+  try {
+    const u = new URL(href);
+    return u.host.replace(/^www\./, "") + (u.pathname === "/" ? "" : u.pathname.replace(/\/$/, ""));
+  } catch {
+    return href;
+  }
+}
+
+let myCompanies = [];
 const pill = (status, small = true) =>
   h("span", { className: `pill ${status}` }, icon(STATUS[status].icon, small ? 13 : 15), STATUS[status].label);
 const sizeText = (n) =>
@@ -209,39 +225,504 @@ function uploadPanel(item, close) {
   );
 }
 
+const RESPONSE = {
+  none: { label: "No response", icon: "clock", cls: "submitted" },
+  accepted: { label: "Accepted", icon: "check", cls: "approved" },
+  denied: { label: "Denied", icon: "x", cls: "rejected" },
+};
+const RESPONSE_ORDER = ["none", "accepted", "denied"];
+
+// A status tag. With `onChange` it is a button that flips on double-click (or Enter); without it, plain text.
+function tag(label, iconName, cls, onChange, what) {
+  if (!onChange) return h("span", { className: `pill ${cls}` }, icon(iconName, 12), label);
+  const el = h(
+    "button",
+    {
+      type: "button",
+      className: `pill tog ${cls}`,
+      title: `${what}: double-click to change`,
+      "aria-label": `${what}: ${label}. Double-click or press Enter to change.`,
+    },
+    icon(iconName, 12),
+    label,
+  );
+  el.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    onChange(el);
+  });
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onChange(el);
+    }
+  });
+  return el;
+}
+
+// Location, applied and response tags for one company. `patch(fields, button)` makes them toggleable.
+function companyTags(c, patch) {
+  const tags = [
+    tag(
+      LOCATION[c.location],
+      "pin",
+      c.location === "inside" ? "todo" : "",
+      patch && ((el) => patch({ location: c.location === "inside" ? "outside" : "inside" }, el)),
+      "Location",
+    ),
+    tag(
+      c.applied ? "Applied" : "Not applied",
+      c.applied ? "check" : "minus",
+      c.applied ? "approved" : "na",
+      patch && ((el) => patch({ applied: !c.applied }, el)),
+      "Application",
+    ),
+  ];
+  if (c.applied) {
+    const r = RESPONSE[c.response];
+    const next = RESPONSE_ORDER[(RESPONSE_ORDER.indexOf(c.response) + 1) % RESPONSE_ORDER.length];
+    tags.push(tag(r.label, r.icon, r.cls, patch && ((el) => patch({ response: next }, el)), "Response"));
+  }
+  return h("div", { className: "tags" }, ...tags);
+}
+
+function companyRow(c, patch, ...actions) {
+  return h(
+    "li",
+    {},
+    h(
+      "div",
+      { className: "grow" },
+      h("b", {}, c.name),
+      h("a", { href: c.link, target: "_blank", rel: "noopener noreferrer" }, icon("link", 13), prettyLink(c.link)),
+      c.email
+        ? h("a", { href: `mailto:${c.email}` }, icon("mail", 13), c.email)
+        : h("span", { className: "muted mail" }, icon("mail", 13), "Email: N/A"),
+    ),
+    companyTags(c, patch),
+    ...actions,
+  );
+}
+
+// ---- Company list: every change shows on screen immediately and syncs to the server in the background ----
+
+let syncQueue = Promise.resolve();
+let pendingSync = 0;
+let needsRefresh = false;
+let tempSeq = 0;
+const realIds = new Map(); // temporary id of a just-added company -> the id the server gave it
+let repaintCompanies = () => {};
+
+const MAX_COMPANIES = 20;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Mirrors the server's checks so a bad entry is caught before it is shown (the server still has the last word).
+function normalizeCompany(raw, editing) {
+  const name = raw.name.trim();
+  if (!name) throw new Error("Company name is required.");
+  let text = raw.link.trim();
+  if (!text) throw new Error("Add the company's Facebook page or website.");
+  if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
+  let url;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new Error("That link does not look valid.");
+  }
+  if (!url.hostname.includes(".") || url.href.length > 300) throw new Error("That link does not look valid.");
+
+  let email = "";
+  if (!raw.noEmail) {
+    email = raw.email.trim().toLowerCase();
+    if (!email) throw new Error("Add the company's email, or tick “No email (N/A)”.");
+    if (!EMAIL_RE.test(email)) throw new Error("Enter a valid email address.");
+  }
+  if (!editing && myCompanies.length >= MAX_COMPANIES) {
+    throw new Error(`You can list up to ${MAX_COMPANIES} companies.`);
+  }
+  const applied = Boolean(raw.applied);
+  return { name, link: url.href, email, location: raw.location, applied, response: applied ? raw.response : "none" };
+}
+
+const toApi = (fields) => ({ ...fields, email: fields.email || "N/A" });
+const serverId = (id) => realIds.get(id) ?? id; // still a "tmp-…" string if creating it failed
+
+// Re-render the whole checklist (status, progress ring) once every change is saved and no form is open.
+function maybeRefresh() {
+  if (needsRefresh && pendingSync === 0 && !document.querySelector("#view .panel")) {
+    needsRefresh = false;
+    render();
+  }
+}
+
+// Runs `task` after all earlier changes have finished. If the server refuses one, fall back to its list and say why.
+function enqueue(task, { refresh = false } = {}) {
+  if (refresh) needsRefresh = true;
+  pendingSync++;
+  syncQueue = syncQueue
+    .then(task)
+    .catch(async (err) => {
+      if (err.status === 401) return (location.href = "/");
+      toast(err.message, "err");
+      try {
+        myCompanies = (await api("GET", "/api/companies")).companies;
+      } catch {
+        // offline: keep what is on screen
+      }
+      needsRefresh = true;
+      repaintCompanies();
+    })
+    .finally(() => {
+      pendingSync--;
+      maybeRefresh();
+    });
+}
+
+function addCompany(fields) {
+  const tmp = `tmp-${++tempSeq}`;
+  myCompanies = [...myCompanies, { id: tmp, ...fields, createdAt: new Date().toISOString() }];
+  repaintCompanies();
+  toast("Company added and sent to your coordinator.");
+  enqueue(
+    async () => {
+      const { id } = await api("POST", "/api/companies", toApi(fields));
+      realIds.set(tmp, id);
+    },
+    { refresh: true },
+  );
+}
+
+function updateCompany(c, fields) {
+  myCompanies = myCompanies.map((x) => (x.id === c.id ? { ...x, ...fields } : x));
+  repaintCompanies();
+  toast("Company updated.");
+  enqueue(
+    async () => {
+      const id = serverId(c.id);
+      if (typeof id === "number") await api("PUT", `/api/companies/${id}`, toApi(fields));
+    },
+    { refresh: true },
+  );
+}
+
+function removeCompany(c) {
+  myCompanies = myCompanies.filter((x) => x.id !== c.id);
+  repaintCompanies();
+  toast("Company removed.");
+  enqueue(
+    async () => {
+      const id = serverId(c.id);
+      if (typeof id === "number") await api("DELETE", `/api/companies/${id}`);
+    },
+    { refresh: true },
+  );
+}
+
+// Tag toggles (location / applied / response): `fields` holds just the one thing that changed.
+function patchCompany(c, fields) {
+  const next = { ...c, ...fields };
+  if (!next.applied) next.response = "none"; // same rule the server applies
+  myCompanies = myCompanies.map((x) => (x.id === c.id ? next : x));
+  repaintCompanies();
+  enqueue(async () => {
+    const id = serverId(c.id);
+    if (typeof id === "number") await api("PATCH", `/api/companies/${id}`, fields);
+  });
+}
+
+function companyPanel(editing, close) {
+  const name = h("input", {
+    name: "name",
+    value: editing?.name ?? "",
+    maxLength: 150,
+    required: true,
+    placeholder: "e.g. Acme Software Inc.",
+  });
+  const link = h("input", {
+    name: "link",
+    value: editing?.link ?? "",
+    maxLength: 300,
+    required: true,
+    placeholder: "facebook.com/yourpage or www.company.com",
+  });
+  const email = h("input", {
+    name: "email",
+    type: "email",
+    value: editing?.email ?? "",
+    maxLength: 254,
+    placeholder: "hr@company.com",
+  });
+  const noEmail = h("input", {
+    type: "checkbox",
+    checked: Boolean(editing && !editing.email),
+    onchange: () => {
+      email.disabled = noEmail.checked;
+      if (noEmail.checked) email.value = "";
+    },
+  });
+  email.disabled = noEmail.checked;
+
+  let where = editing?.location ?? "inside";
+  const kinds = ["inside", "outside"];
+  const options = kinds.map((value) =>
+    h(
+      "button",
+      {
+        type: "button",
+        role: "radio",
+        onclick: () => {
+          where = value;
+          paint();
+        },
+      },
+      icon("pin", 14),
+      LOCATION[value],
+    ),
+  );
+  const paint = () => options.forEach((btn, i) => btn.setAttribute("aria-checked", String(kinds[i] === where)));
+  paint();
+
+  const response = h(
+    "select",
+    { name: "response" },
+    ...RESPONSE_ORDER.map((key) =>
+      h("option", { value: key, selected: key === (editing?.response ?? "none") }, RESPONSE[key].label),
+    ),
+  );
+  const responseField = h("label", { className: "field" }, "Did they reply?", response);
+  const applied = h("input", {
+    type: "checkbox",
+    checked: Boolean(editing?.applied),
+    onchange: () => {
+      responseField.hidden = !applied.checked;
+    },
+  });
+  responseField.hidden = !applied.checked;
+
+  const save = h("button", { type: "submit", className: "btn sm" }, editing ? "Save changes" : "Add company");
+  return h(
+    "form",
+    {
+      className: "panel",
+      onsubmit: (e) => {
+        e.preventDefault();
+        let fields;
+        try {
+          fields = normalizeCompany(
+            {
+              name: name.value,
+              link: link.value,
+              email: email.value,
+              noEmail: noEmail.checked,
+              location: where,
+              applied: applied.checked,
+              response: response.value,
+            },
+            editing,
+          );
+        } catch (err) {
+          return toast(err.message, "err");
+        }
+        if (editing) updateCompany(editing, fields);
+        else addCompany(fields);
+        close();
+      },
+    },
+    h("label", { className: "field" }, "Company name", name),
+    h("label", { className: "field" }, "Facebook page or website", link),
+    h("label", { className: "field" }, "Company email", email),
+    h("label", { className: "check" }, noEmail, "No email (N/A)"),
+    h(
+      "div",
+      { className: "field" },
+      "Where is it?",
+      h("div", { className: "seg2", role: "radiogroup", "aria-label": "Location" }, ...options),
+    ),
+    h("label", { className: "check" }, applied, "I already applied here"),
+    responseField,
+    h(
+      "div",
+      { className: "actions" },
+      h("button", { type: "button", className: "btn outline sm", onclick: close }, "Cancel"),
+      save,
+    ),
+  );
+}
+
+// The student's own list: tags toggle on double-click, and each row has edit/remove buttons.
+function companyList({ onEdit, onRemove, onPatch }) {
+  if (!myCompanies.length) {
+    return h(
+      "p",
+      { className: "desc" },
+      "No companies yet. Add the ones you find. They are sent to your coordinator right away.",
+    );
+  }
+  return h(
+    "div",
+    {},
+    h(
+      "ul",
+      { className: "company-list" },
+      ...myCompanies.map((c) =>
+        companyRow(
+          c,
+          (fields, el) => onPatch(c, fields, el),
+          h(
+            "button",
+            {
+              type: "button",
+              className: "icon-btn plain sm",
+              "aria-label": `Edit ${c.name}`,
+              title: "Edit",
+              onclick: () => onEdit(c),
+            },
+            icon("pencil", 15),
+          ),
+          h(
+            "button",
+            {
+              type: "button",
+              className: "icon-btn plain sm",
+              "aria-label": `Remove ${c.name}`,
+              title: "Remove",
+              style: "color:var(--err)",
+              onclick: (e) => onRemove(c, e.currentTarget),
+            },
+            icon("trash", 15),
+          ),
+        ),
+      ),
+    ),
+    h("p", { className: "hint" }, "Tip: double-click a tag (location, applied, response) to change it."),
+  );
+}
+
 function activity(item) {
   const status = statusOf(item);
   const sub = item.submission;
+  const na = status === "na";
+  const isCompanies = item.kind === "companies";
   const locked = status === "approved";
   const blocked = !me.emailVerified;
-  const li = h("li", { className: "activity", id: `req-${item.id}`, "data-status": status });
+  const li = h("li", { className: `activity${na ? " na" : ""}`, id: `req-${item.id}`, "data-status": status });
   let panel = null;
 
-  const togglePanel = () => {
-    if (panel) {
-      panel.remove();
-      panel = null;
-    } else {
-      panel = uploadPanel(item, togglePanel);
-      li.append(panel);
-    }
+  const dismissPanel = () => {
+    panel?.remove();
+    panel = null;
   };
+  const closePanel = () => {
+    dismissPanel();
+    maybeRefresh(); // a refresh may have been waiting for this form to close
+  };
+  const openPanel = (el) => {
+    dismissPanel();
+    panel = el;
+    li.append(el);
+  };
+  const togglePanel = () => (panel ? closePanel() : openPanel(uploadPanel(item, closePanel)));
+  const openCompanyForm = (editing) => openPanel(companyPanel(editing, closePanel));
 
-  const meta = h(
-    "div",
-    { className: "meta" },
-    dueChip(item, status),
-    item.requiresFile
-      ? h("span", { className: "pill" }, icon("file", 13), "PDF, PNG or JPG")
-      : h("span", { className: "pill" }, icon("check", 13), "No file needed"),
-    sub?.fileName && h("a", { href: `/api/submissions/${sub.id}/file` }, icon("download", 14), sub.fileName),
-    sub && h("span", { className: "muted" }, `Updated ${fmtDate(sub.updatedAt)}`),
-  );
+  // Built from the current list so a toggle can repaint just this part without refetching anything.
+  const buildMeta = () => {
+    const inside = myCompanies.filter((c) => c.location === "inside").length;
+    const applied = myCompanies.filter((c) => c.applied).length;
+    const accepted = myCompanies.filter((c) => c.response === "accepted").length;
+    return h(
+      "div",
+      { className: "meta" },
+      !na && dueChip(item, status),
+      isCompanies
+        ? [
+            h("span", { className: "pill" }, icon("building", 13), companyCount(myCompanies.length)),
+            myCompanies.length > 0 &&
+              h(
+                "span",
+                { className: "pill" },
+                icon("pin", 13),
+                `${inside} inside · ${myCompanies.length - inside} outside Legazpi`,
+              ),
+            applied > 0 && h("span", { className: "pill approved" }, icon("check", 13), `${applied} applied`),
+            accepted > 0 && h("span", { className: "pill approved" }, icon("check", 13), `${accepted} accepted`),
+          ]
+        : item.requiresFile
+          ? h("span", { className: "pill" }, icon("file", 13), "PDF, PNG or JPG")
+          : h("span", { className: "pill" }, icon("check", 13), "No file needed"),
+      sub?.fileName && h("a", { href: `/api/submissions/${sub.id}/file` }, icon("download", 14), sub.fileName),
+      sub && !na && h("span", { className: "muted" }, `Updated ${fmtDate(sub.updatedAt)}`),
+    );
+  };
+  const buildList = () =>
+    companyList({
+      onEdit: openCompanyForm,
+      onRemove: removeCompany,
+      onPatch: patchCompany,
+    });
+  let metaEl = buildMeta();
+  let listEl = isCompanies && !na ? buildList() : null;
+  if (listEl) repaintCompanies = repaint;
+
+  function repaint() {
+    // Keep keyboard focus on the same tag after the rows are rebuilt.
+    let focus = null;
+    if (listEl?.contains(document.activeElement)) {
+      const rows = [...listEl.querySelectorAll("li")];
+      const row = rows.findIndex((r) => r.contains(document.activeElement));
+      const tagIndex = row < 0 ? -1 : [...rows[row].querySelectorAll(".tags .tog")].indexOf(document.activeElement);
+      if (tagIndex >= 0) focus = [row, tagIndex];
+    }
+    const meta = buildMeta();
+    metaEl.replaceWith(meta);
+    metaEl = meta;
+    if (listEl) {
+      const list = buildList();
+      listEl.replaceWith(list);
+      listEl = list;
+      if (focus) list.querySelectorAll("li")[focus[0]]?.querySelectorAll(".tags .tog")[focus[1]]?.focus();
+    }
+  }
+
+  const withdraw = () =>
+    h(
+      "button",
+      {
+        type: "button",
+        className: "btn link",
+        disabled: blocked,
+        onclick: (e) =>
+          run(e.currentTarget, async () => {
+            await api("DELETE", `/api/requirements/${item.id}/submission`);
+            toast("Submission withdrawn.");
+            await render();
+          }),
+      },
+      "Withdraw",
+    );
 
   const side = h("div", { className: "act-side" });
   const lockTitle = blocked ? "Verify your email to submit" : undefined;
 
-  if (locked) {
+  if (na) {
+    put(side, pill("na", false));
+  } else if (isCompanies) {
+    // The company list is submitted automatically; students can keep adding to it at any time.
+    const add = h(
+      "button",
+      {
+        type: "button",
+        className: `btn sm done-btn${myCompanies.length ? " outline" : ""}`,
+        onclick: () => openCompanyForm(null),
+      },
+      icon("plus", 15),
+      "Add company",
+    );
+    const state = locked
+      ? h("span", { className: "btn ok sm done-btn", style: "pointer-events:none" }, icon("check", 15), "Done")
+      : status === "todo"
+        ? null
+        : pill(status, false);
+    put(side, state, add);
+  } else if (locked) {
     put(side, h("span", { className: "btn ok sm done-btn", style: "pointer-events:none" }, icon("check", 15), "Done"));
   } else if (status === "submitted") {
     put(
@@ -256,21 +737,7 @@ function activity(item) {
             { type: "button", className: "btn link", disabled: blocked, onclick: togglePanel },
             "Replace file",
           ),
-        h(
-          "button",
-          {
-            type: "button",
-            className: "btn link",
-            disabled: blocked,
-            onclick: (e) =>
-              run(e.currentTarget, async () => {
-                await api("DELETE", `/api/requirements/${item.id}/submission`);
-                toast("Submission withdrawn.");
-                await render();
-              }),
-          },
-          "Withdraw",
-        ),
+        withdraw(),
       ),
     );
   } else {
@@ -301,13 +768,14 @@ function activity(item) {
   }
 
   li.append(
-    h("div", { className: "act-icon" }, icon(item.requiresFile ? "file" : "check", 22)),
+    h("div", { className: "act-icon" }, icon(isCompanies ? "building" : item.requiresFile ? "file" : "check", 22)),
     h(
       "div",
       { className: "act-body" },
       h("h3", {}, item.title),
       item.description && h("p", { className: "desc" }, item.description),
-      meta,
+      metaEl,
+      listEl,
       sub?.note && h("div", { className: `callout ${status}` }, h("b", {}, "Reviewer: "), sub.note),
     ),
     side,
@@ -325,10 +793,10 @@ function pathAside(phases) {
         { className: "steps" },
         ...phase.items.map((item) => {
           const status = statusOf(item);
-          const glyph = { approved: "check", submitted: "clock", rejected: "x", todo: "check" }[status];
+          const glyph = { approved: "check", submitted: "clock", rejected: "x", todo: "check", na: "minus" }[status];
           return h(
             "li",
-            { className: "step" },
+            { className: `step${status === "na" ? " na" : ""}` },
             h("span", { className: `node ${status}` }, icon(glyph, 11)),
             h("button", { type: "button", onclick: () => scrollToItem(item.id) }, item.title),
           );
@@ -340,7 +808,11 @@ function pathAside(phases) {
 }
 
 async function checklistView() {
-  const { items, progress } = await api("GET", "/api/requirements");
+  const [{ items, progress }, mine] = await Promise.all([
+    api("GET", "/api/requirements"),
+    api("GET", "/api/companies"),
+  ]);
+  myCompanies = mine.companies;
   const count = (s) => items.filter((i) => statusOf(i) === s).length;
   const pct = progress.total ? Math.round((progress.approved / progress.total) * 100) : 0;
   const next = items.find((i) => ["todo", "rejected"].includes(statusOf(i)));
@@ -387,32 +859,36 @@ async function checklistView() {
       ["submitted", "In review", count("submitted")],
       ["rejected", "Needs changes", count("rejected")],
       ["approved", "Approved", count("approved")],
-    ].map(([key, text, n]) =>
-      h(
-        "button",
-        {
-          type: "button",
-          className: "chip",
-          "aria-pressed": String(filter === key),
-          onclick: () => {
-            filter = key;
-            render();
+      ["na", "N/A for now", count("na")],
+    ]
+      .filter(([key, , n]) => key !== "na" || n > 0)
+      .map(([key, text, n]) =>
+        h(
+          "button",
+          {
+            type: "button",
+            className: "chip",
+            "aria-pressed": String(filter === key),
+            onclick: () => {
+              filter = key;
+              render();
+            },
           },
-        },
-        text,
-        h("small", {}, n),
+          text,
+          h("small", {}, n),
+        ),
       ),
-    ),
   );
 
   const sections = phases
     .map((phase) => {
       const shown = phase.items.filter((i) => filter === "all" || statusOf(i) === filter);
       if (!shown.length) return null;
-      const done = phase.items.filter((i) => statusOf(i) === "approved").length;
+      const open = phase.items.filter((i) => i.available);
+      const done = open.filter((i) => statusOf(i) === "approved").length;
       return h(
         "details",
-        { className: "card phase", open: true },
+        { className: "card phase", open: open.length > 0 || filter === "na" },
         h(
           "summary",
           {},
@@ -420,12 +896,12 @@ async function checklistView() {
             "div",
             { className: "phase-title" },
             h("h2", {}, phase.name),
-            h("small", { className: "muted" }, `${done} of ${phase.items.length} approved`),
+            h("small", { className: "muted" }, open.length ? `${done} of ${open.length} approved` : "N/A for now"),
           ),
           h(
             "div",
             { className: "meter", style: "margin-left:auto" },
-            h("i", { style: `width:${(done / phase.items.length) * 100}%` }),
+            h("i", { style: `width:${open.length ? (done / open.length) * 100 : 0}%` }),
           ),
           h("span", { className: "chev", style: "margin-left:12px" }, icon("chevron", 18)),
         ),
@@ -722,9 +1198,11 @@ async function profileView() {
                 h(
                   "td",
                   {},
-                  i.submission.fileName
-                    ? h("a", { href: `/api/submissions/${i.submission.id}/file` }, i.submission.fileName)
-                    : "—",
+                  i.kind === "companies"
+                    ? "Company list"
+                    : i.submission.fileName
+                      ? h("a", { href: `/api/submissions/${i.submission.id}/file` }, i.submission.fileName)
+                      : "—",
                 ),
                 h("td", {}, fmtDate(i.submission.updatedAt)),
                 h(
@@ -841,6 +1319,8 @@ async function reviewView() {
             s.fileName && h("a", { href: `/api/submissions/${s.id}/file` }, icon("download", 14), s.fileName),
             h("span", { className: "muted" }, fmtDate(s.updatedAt)),
           ),
+          s.kind === "companies" &&
+            h("ul", { className: "company-list" }, ...(s.companies ?? []).map((c) => companyRow(c))),
         ),
         h(
           "div",
@@ -992,7 +1472,8 @@ function requirementDialog(item, items) {
             phase: f.get("phase"),
             dueDate: f.get("dueDate"),
             sortOrder: Number(f.get("sortOrder")),
-            requiresFile: f.has("requiresFile"),
+            requiresFile: item?.kind === "companies" ? false : f.has("requiresFile"),
+            available: f.has("available"),
           };
           run(form.querySelector("[type=submit]"), async () => {
             await api(
@@ -1047,11 +1528,18 @@ function requirementDialog(item, items) {
         "Order",
         h("input", { name: "sortOrder", type: "number", step: 1, value: item?.sortOrder ?? items.length + 1 }),
       ),
+      item?.kind !== "companies" &&
+        h(
+          "label",
+          { className: "check" },
+          h("input", { name: "requiresFile", type: "checkbox", checked: item ? item.requiresFile : true }),
+          "Requires a file upload",
+        ),
       h(
         "label",
         { className: "check" },
-        h("input", { name: "requiresFile", type: "checkbox", checked: item ? item.requiresFile : true }),
-        "Requires a file upload",
+        h("input", { name: "available", type: "checkbox", checked: item ? item.available : true }),
+        "Open for students (untick to mark it N/A for now)",
       ),
       h(
         "div",
@@ -1117,19 +1605,49 @@ async function requirementsView() {
                 h(
                   "div",
                   { className: "act-icon", style: "width:38px;height:38px" },
-                  icon(item.requiresFile ? "file" : "check", 18),
+                  icon(item.kind === "companies" ? "building" : item.requiresFile ? "file" : "check", 18),
                 ),
                 h(
                   "div",
                   { className: "grow" },
-                  h("b", {}, item.title),
+                  h(
+                    "b",
+                    { style: item.available ? "" : "text-decoration:line-through;color:var(--muted)" },
+                    item.title,
+                  ),
                   h(
                     "p",
                     {},
-                    [item.requiresFile ? "File upload" : "No file", item.dueDate && `Due ${fmtDay(item.dueDate)}`]
+                    [
+                      item.kind === "companies" ? "Company list" : item.requiresFile ? "File upload" : "No file",
+                      item.dueDate && `Due ${fmtDay(item.dueDate)}`,
+                    ]
                       .filter(Boolean)
                       .join(" · "),
                   ),
+                ),
+                h(
+                  "button",
+                  {
+                    type: "button",
+                    className: `btn sm ${item.available ? "outline" : ""}`,
+                    title: item.available ? "Close this requirement for now" : "Open this requirement to students",
+                    onclick: (e) =>
+                      run(e.currentTarget, async () => {
+                        await api("PUT", `/api/admin/requirements/${item.id}`, {
+                          title: item.title,
+                          description: item.description,
+                          phase: item.phase,
+                          dueDate: item.dueDate ?? "",
+                          sortOrder: item.sortOrder,
+                          requiresFile: item.requiresFile,
+                          available: !item.available,
+                        });
+                        toast(item.available ? "Marked N/A for now." : "Opened for students.");
+                        await render();
+                      }),
+                  },
+                  item.available ? "Mark N/A" : "Open it",
                 ),
                 h(
                   "button",

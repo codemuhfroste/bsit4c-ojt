@@ -111,4 +111,50 @@ export const migrations = [
       titles.map((title) => ({ sql: "UPDATE requirements SET phase = ? WHERE title = ?", args: [phase, title] })),
     ),
   ],
+
+  // 8: first coordinator tasks. Requirements can be closed ("N/A for now") and can be a company list instead of a file.
+  [
+    "ALTER TABLE requirements ADD COLUMN kind TEXT NOT NULL DEFAULT 'upload'",
+    "ALTER TABLE requirements ADD COLUMN available INTEGER NOT NULL DEFAULT 1",
+    `CREATE TABLE companies (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL,
+      name       TEXT NOT NULL,
+      link       TEXT NOT NULL,
+      location   TEXT NOT NULL CHECK (location IN ('inside', 'outside')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    "CREATE INDEX companies_user_idx ON companies (user_id)",
+    {
+      sql: `INSERT INTO requirements (title, description, phase, requires_file, sort_order, kind)
+            VALUES (?, ?, 'Current tasks', 0, -1, 'companies')`,
+      args: [
+        "Find OJT companies",
+        "List companies you could do your OJT with. Add their Facebook page or website and whether they are inside or outside Legazpi.",
+      ],
+    },
+    "UPDATE requirements SET phase = 'Current tasks', sort_order = 0, description = 'Upload your updated resume (PDF, PNG or JPG).' WHERE title = 'Resume / CV'",
+    ...[
+      "Parent/guardian consent form",
+      "Medical certificate",
+      "Endorsement letter",
+      "Memorandum of Agreement (MOA)",
+      "Weekly accomplishment reports",
+      "Daily time record (DTR)",
+      "Certificate of completion",
+    ].map((title) => ({ sql: "UPDATE requirements SET available = 0 WHERE title = ?", args: [title] })),
+  ],
+
+  // 9: company contact email, applied flag and the company's response ("" means N/A) and whether the student already applied there
+  [
+    "ALTER TABLE companies ADD COLUMN email TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE companies ADD COLUMN applied INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE companies ADD COLUMN response TEXT NOT NULL DEFAULT 'none' CHECK (response IN ('none', 'accepted', 'denied'))",
+    {
+      sql: "UPDATE requirements SET description = ? WHERE kind = 'companies'",
+      args: [
+        "List companies you could do your OJT with: their Facebook page or website, their email (N/A if none), whether they are inside or outside Legazpi, and whether you already applied, and whether they accepted, denied or have not replied.",
+      ],
+    },
+  ],
 ];
