@@ -157,4 +157,19 @@ export const migrations = [
       ],
     },
   ],
+
+  // 10: optional requirements do not count toward progress (the resume is optional for now)
+  [
+    "ALTER TABLE requirements ADD COLUMN optional INTEGER NOT NULL DEFAULT 0",
+    "UPDATE requirements SET optional = 1, description = 'Optional: upload your updated resume (PDF, PNG or JPG).' WHERE title = 'Resume / CV'",
+  ],
+
+  // 11: advisers review each company, and flag companies that have a MoA with the university
+  [
+    "ALTER TABLE companies ADD COLUMN review TEXT NOT NULL DEFAULT 'pending' CHECK (review IN ('pending', 'approved', 'rejected'))",
+    "ALTER TABLE companies ADD COLUMN review_note TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE companies ADD COLUMN reviewed_by INTEGER",
+    "ALTER TABLE companies ADD COLUMN reviewed_at TEXT",
+    "ALTER TABLE companies ADD COLUMN moa INTEGER NOT NULL DEFAULT 0",
+  ],
 ];

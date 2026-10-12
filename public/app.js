@@ -260,7 +260,7 @@ function tag(label, iconName, cls, onChange, what) {
 }
 
 // Location, applied and response tags for one company. `patch(fields, button)` makes them toggleable.
-function companyTags(c, patch) {
+function companyTags(c, patch, staff = false) {
   const tags = [
     tag(
       LOCATION[c.location],
@@ -282,10 +282,16 @@ function companyTags(c, patch) {
     const next = RESPONSE_ORDER[(RESPONSE_ORDER.indexOf(c.response) + 1) % RESPONSE_ORDER.length];
     tags.push(tag(r.label, r.icon, r.cls, patch && ((el) => patch({ response: next }, el)), "Response"));
   }
+  if (!staff) {
+    // Set by advisers: whether the university has a MoA with this company, and the review result.
+    if (c.moa) tags.push(tag("MoA with BU", "shield", "approved"));
+    if (c.review === "approved") tags.push(tag("Approved", "check", "approved"));
+    else if (c.review === "rejected") tags.push(tag("Rejected", "x", "rejected"));
+  }
   return h("div", { className: "tags" }, ...tags);
 }
 
-function companyRow(c, patch, ...actions) {
+function buildCompanyRow(c, { patch, actions = [], staff = false }) {
   return h(
     "li",
     {},
@@ -298,9 +304,104 @@ function companyRow(c, patch, ...actions) {
         ? h("a", { href: `mailto:${c.email}` }, icon("mail", 13), c.email)
         : h("span", { className: "muted mail" }, icon("mail", 13), "Email: N/A"),
     ),
-    companyTags(c, patch),
+    companyTags(c, patch, staff),
     ...actions,
+    !staff &&
+      c.reviewNote &&
+      c.review !== "pending" &&
+      h("div", { className: `callout ${c.review} company-note` }, h("b", {}, "Reviewer: "), c.reviewNote),
   );
+}
+
+const companyRow = (c, patch, ...actions) => buildCompanyRow(c, { patch, actions });
+
+// A company as an adviser sees it: Approve / Reject with a note, and a double-click MoA tag. Changes show
+// immediately and are undone with a message if the server refuses them.
+function staffCompanyRow(initial) {
+  let c = initial;
+  let li;
+
+  const swap = () => {
+    const refocus = li?.contains(document.activeElement) && document.activeElement.classList.contains("moa-tag");
+    const next = build();
+    li.replaceWith(next);
+    li = next;
+    if (refocus) li.querySelector(".moa-tag")?.focus();
+  };
+
+  async function change(next, request, success) {
+    const before = c;
+    c = { ...c, ...next };
+    swap();
+    try {
+      await request();
+      if (success) toast(success);
+    } catch (err) {
+      if (err.status === 401) return (location.href = "/");
+      toast(err.message, "err");
+      c = before;
+      swap();
+    }
+  }
+
+  const setMoa = () => {
+    const moa = !c.moa; // decide the new value first: change() updates `c` before the request runs
+    return change({ moa }, () => api("PATCH", `/api/admin/companies/${c.id}`, { moa }));
+  };
+
+  const decide = (status, noteText) => {
+    const note = noteText.trim();
+    if (status === "rejected" && !note) return toast("Tell the student why it was rejected.", "err");
+    return change(
+      { review: status, reviewNote: note },
+      () => api("POST", `/api/admin/companies/${c.id}/review`, { status, note }),
+      status === "approved" ? `${c.name} approved.` : `${c.name} sent back.`,
+    );
+  };
+
+  function build() {
+    const row = buildCompanyRow(c, { staff: true });
+    const state =
+      c.review === "approved"
+        ? h("span", { className: "pill approved" }, icon("check", 12), "Approved")
+        : c.review === "rejected"
+          ? h("span", { className: "pill rejected" }, icon("x", 12), "Rejected")
+          : h("span", { className: "pill na" }, "Not reviewed");
+    const moa = tag(c.moa ? "MoA with BU" : "No MoA", "shield", c.moa ? "approved" : "na", setMoa, "MoA with BU");
+    moa.classList.add("moa-tag");
+    row.querySelector(".tags").append(moa, state);
+
+    const note = h("input", {
+      type: "text",
+      maxLength: 300,
+      placeholder: "Note (required to reject)",
+      "aria-label": `Note for ${c.name}`,
+      value: c.reviewNote,
+    });
+    row.append(
+      h(
+        "div",
+        { className: "review-line" },
+        note,
+        h(
+          "button",
+          { type: "button", className: "btn ok sm", onclick: () => decide("approved", note.value) },
+          icon("check", 14),
+          "Approve",
+        ),
+        h(
+          "button",
+          { type: "button", className: "btn danger sm", onclick: () => decide("rejected", note.value) },
+          icon("x", 14),
+          "Reject",
+        ),
+      ),
+    );
+    return row;
+  }
+
+  li = build();
+  return li;
 }
 
 // ---- Company list: every change shows on screen immediately and syncs to the server in the background ----
@@ -631,6 +732,7 @@ function activity(item) {
     return h(
       "div",
       { className: "meta" },
+      item.optional && !na && h("span", { className: "pill todo" }, "Optional"),
       !na && dueChip(item, status),
       isCompanies
         ? [
@@ -798,7 +900,11 @@ function pathAside(phases) {
             "li",
             { className: `step${status === "na" ? " na" : ""}` },
             h("span", { className: `node ${status}` }, icon(glyph, 11)),
-            h("button", { type: "button", onclick: () => scrollToItem(item.id) }, item.title),
+            h(
+              "button",
+              { type: "button", onclick: () => scrollToItem(item.id) },
+              item.optional ? `${item.title} · optional` : item.title,
+            ),
           );
         }),
       ),
@@ -813,9 +919,11 @@ async function checklistView() {
     api("GET", "/api/companies"),
   ]);
   myCompanies = mine.companies;
-  const count = (s) => items.filter((i) => statusOf(i) === s).length;
+  const count = (s) => items.filter((i) => statusOf(i) === s).length; // everything listed (filter chips)
+  const counted = items.filter((i) => !i.optional); // optional items do not count toward progress
+  const countRequired = (s) => counted.filter((i) => statusOf(i) === s).length;
   const pct = progress.total ? Math.round((progress.approved / progress.total) * 100) : 0;
-  const next = items.find((i) => ["todo", "rejected"].includes(statusOf(i)));
+  const next = counted.find((i) => ["todo", "rejected"].includes(statusOf(i)));
   const phases = groupByPhase(items);
 
   const summary = h(
@@ -836,10 +944,12 @@ async function checklistView() {
       h(
         "div",
         { className: "stat-chips" },
-        h("span", {}, h("b", {}, count("submitted")), " in review"),
-        h("span", {}, h("b", {}, count("rejected")), " need changes"),
-        h("span", {}, h("b", {}, count("todo")), " to do"),
+        h("span", {}, h("b", {}, countRequired("submitted")), " in review"),
+        h("span", {}, h("b", {}, countRequired("rejected")), " need changes"),
+        h("span", {}, h("b", {}, countRequired("todo")), " to do"),
       ),
+      items.some((i) => i.optional && i.available) &&
+        h("p", { className: "nextup" }, "Tasks marked Optional do not count toward your progress."),
       next &&
         h(
           "p",
@@ -884,11 +994,12 @@ async function checklistView() {
     .map((phase) => {
       const shown = phase.items.filter((i) => filter === "all" || statusOf(i) === filter);
       if (!shown.length) return null;
-      const open = phase.items.filter((i) => i.available);
+      const open = phase.items.filter((i) => i.available && !i.optional);
+      const optionalOnly = open.length === 0 && phase.items.some((i) => i.available);
       const done = open.filter((i) => statusOf(i) === "approved").length;
       return h(
         "details",
-        { className: "card phase", open: open.length > 0 || filter === "na" },
+        { className: "card phase", open: phase.items.some((i) => i.available) || filter === "na" },
         h(
           "summary",
           {},
@@ -896,7 +1007,11 @@ async function checklistView() {
             "div",
             { className: "phase-title" },
             h("h2", {}, phase.name),
-            h("small", { className: "muted" }, open.length ? `${done} of ${open.length} approved` : "N/A for now"),
+            h(
+              "small",
+              { className: "muted" },
+              open.length ? `${done} of ${open.length} approved` : optionalOnly ? "Optional" : "N/A for now",
+            ),
           ),
           h(
             "div",
@@ -1248,6 +1363,39 @@ async function profileView() {
 
 let reviewFilter = "submitted";
 
+// Note box + Approve / Reject buttons for one submission (used in the review queue and on a student's page).
+function reviewControls(submissionId, initialNote = "") {
+  const note = h("input", {
+    type: "text",
+    maxLength: 500,
+    placeholder: "Note (required to reject)",
+    "aria-label": "Reviewer note",
+    value: initialNote,
+  });
+  const decide = (status) => (e) =>
+    run(e.currentTarget, async () => {
+      await api("POST", `/api/admin/submissions/${submissionId}/review`, { status, note: note.value });
+      toast(status === "approved" ? "Approved." : "Sent back for changes.");
+      await render();
+    });
+  return h(
+    "div",
+    { className: "decide" },
+    note,
+    h(
+      "div",
+      { className: "buttons" },
+      h(
+        "button",
+        { type: "button", className: "btn ok sm", onclick: decide("approved") },
+        icon("check", 15),
+        "Approve",
+      ),
+      h("button", { type: "button", className: "btn danger sm", onclick: decide("rejected") }, icon("x", 15), "Reject"),
+    ),
+  );
+}
+
 async function reviewView() {
   const { submissions } = await api("GET", `/api/admin/submissions${reviewFilter ? `?status=${reviewFilter}` : ""}`);
   const chips = h(
@@ -1275,85 +1423,178 @@ async function reviewView() {
     ),
   );
 
+  const search = h("input", {
+    type: "search",
+    placeholder: "Search by student, ID or requirement",
+    "aria-label": "Search submissions",
+  });
   const list = h("div", { className: "list" });
   if (!submissions.length)
     list.append(h("div", { className: "card" }, empty("All caught up", "There is nothing in this view.")));
 
   for (const s of submissions) {
-    const note = h("input", {
-      type: "text",
-      maxLength: 500,
-      placeholder: "Note for the student (required to reject)",
-      "aria-label": "Reviewer note",
-      value: s.note,
-    });
-    const decide = (status) => (e) =>
-      run(e.currentTarget, async () => {
-        await api("POST", `/api/admin/submissions/${s.id}/review`, { status, note: note.value });
-        toast(status === "approved" ? "Approved." : "Sent back for changes.");
-        await render();
-      });
-    list.append(
+    const card = h(
+      "article",
+      {
+        className: "card review-card",
+        "data-text": [s.fullName, s.studentId, s.email, s.requirement].join(" ").toLowerCase(),
+      },
       h(
-        "article",
-        { className: "card review-card" },
+        "div",
+        {},
+        h(
+          "div",
+          { className: "top" },
+          avatar(s.fullName, s.email, 40),
+          h(
+            "div",
+            {},
+            h(
+              "a",
+              { href: `#students/${s.userId}`, className: "name-link", title: "Open this student's page" },
+              h("b", {}, s.fullName || s.email),
+            ),
+            h("small", { style: "display:block" }, [s.studentId, s.email].filter(Boolean).join(" · ")),
+          ),
+        ),
+        h(
+          "div",
+          { className: "meta", style: "margin-top:12px" },
+          h("b", { style: "font-size:.95rem;margin-right:4px" }, s.requirement),
+          pill(s.status),
+          s.fileName && h("a", { href: `/api/submissions/${s.id}/file` }, icon("download", 14), s.fileName),
+          h("span", { className: "muted" }, fmtDate(s.updatedAt)),
+        ),
+        s.kind === "companies" &&
+          h("ul", { className: "company-list" }, ...(s.companies ?? []).map((c) => staffCompanyRow(c))),
+      ),
+      reviewControls(s.id, s.note),
+    );
+    list.append(card);
+  }
+
+  search.addEventListener("input", () => {
+    const q = search.value.trim().toLowerCase();
+    for (const card of list.querySelectorAll("article")) card.hidden = Boolean(q) && !card.dataset.text.includes(q);
+  });
+
+  return h(
+    "div",
+    {},
+    pageHead("Review submissions", "Approve documents or send them back with a note."),
+    chips,
+    h("div", { className: "toolbar" }, search),
+    list,
+  );
+}
+
+// One student's whole checklist: every requirement, their files, their companies, with review controls.
+async function studentDetailView(id) {
+  const { user: u, items, progress, companies } = await api("GET", `/api/admin/users/${id}`);
+  const required = items.filter((i) => i.available && !i.optional);
+  const inReview = required.filter((i) => statusOf(i) === "submitted").length;
+  const todo = required.filter((i) => statusOf(i) === "todo").length;
+  const info = (iconName, label, value) =>
+    h("div", {}, h("dt", {}, icon(iconName, 14), label), h("dd", {}, value || "—"));
+
+  const head = h(
+    "section",
+    { className: "card" },
+    h(
+      "div",
+      { className: "profile-top" },
+      h(
+        "div",
+        { className: "profile-id" },
+        avatar(u.fullName, u.email, 64),
         h(
           "div",
           {},
+          h("h1", {}, u.fullName || u.email),
           h(
             "div",
-            { className: "top" },
-            avatar(s.fullName, s.email, 40),
-            h(
-              "div",
-              {},
-              h("b", {}, s.fullName || s.email),
-              h("small", { style: "display:block" }, [s.studentId, s.email].filter(Boolean).join(" · ")),
-            ),
-          ),
-          h(
-            "div",
-            { className: "meta", style: "margin-top:12px" },
-            h("b", { style: "font-size:.95rem;margin-right:4px" }, s.requirement),
-            pill(s.status),
-            s.fileName && h("a", { href: `/api/submissions/${s.id}/file` }, icon("download", 14), s.fileName),
-            h("span", { className: "muted" }, fmtDate(s.updatedAt)),
-          ),
-          s.kind === "companies" &&
-            h("ul", { className: "company-list" }, ...(s.companies ?? []).map((c) => companyRow(c))),
-        ),
-        h(
-          "div",
-          { className: "decide" },
-          note,
-          h(
-            "div",
-            { className: "buttons" },
-            h(
-              "button",
-              { type: "button", className: "btn ok sm", onclick: decide("approved") },
-              icon("check", 15),
-              "Approve",
-            ),
-            h(
-              "button",
-              { type: "button", className: "btn danger sm", onclick: decide("rejected") },
-              icon("x", 15),
-              "Reject",
-            ),
+            { className: "line" },
+            h("span", {}, u.joined ? `Joined ${fmtDate(u.joined)}` : "Join date unknown"),
+            h("span", { className: "pill solid" }, ROLE_LABEL[u.role]),
+            u.emailVerified
+              ? h("span", { className: "pill approved" }, icon("check", 13), "Verified")
+              : h("span", { className: "pill submitted" }, icon("alert", 13), "Not verified"),
           ),
         ),
       ),
+      h(
+        "div",
+        { className: "profile-actions" },
+        h("a", { className: "btn outline sm", href: `mailto:${u.email}` }, icon("mail", 15), "Email student"),
+      ),
+    ),
+    h(
+      "dl",
+      { className: "info-grid" },
+      info("id", "Student ID", u.studentId),
+      info("mail", "Email", u.email),
+      info("list", "Progress", `${progress.approved} of ${progress.total} approved`),
+    ),
+  );
+
+  const stat = (label, value) =>
+    h("div", { className: "stat" }, h("small", { className: "muted" }, label), h("div", { className: "num" }, value));
+  const stats = h(
+    "div",
+    { className: "stats" },
+    stat("Approved", `${progress.approved}/${progress.total}`),
+    stat("In review", inReview),
+    stat("To do", todo),
+  );
+
+  const rows = items.map((item) => {
+    const status = statusOf(item);
+    const sub = item.submission;
+    const isCompanies = item.kind === "companies";
+    return h(
+      "li",
+      { className: `activity${status === "na" ? " na" : ""}`, "data-status": status },
+      h("div", { className: "act-icon" }, icon(isCompanies ? "building" : item.requiresFile ? "file" : "check", 22)),
+      h(
+        "div",
+        { className: "act-body" },
+        h("h3", {}, item.title),
+        h(
+          "div",
+          { className: "meta" },
+          pill(status),
+          item.optional && h("span", { className: "pill todo" }, "Optional"),
+          sub?.fileName && h("a", { href: `/api/submissions/${sub.id}/file` }, icon("download", 14), sub.fileName),
+          sub && status !== "na" && h("span", { className: "muted" }, `Updated ${fmtDate(sub.updatedAt)}`),
+        ),
+        isCompanies &&
+          status !== "na" &&
+          (companies.length
+            ? h("ul", { className: "company-list" }, ...companies.map((c) => staffCompanyRow(c)))
+            : h("p", { className: "desc" }, "No companies listed yet.")),
+        sub?.note && h("div", { className: `callout ${status}` }, h("b", {}, "Note: "), sub.note),
+      ),
+      h("div", { className: "act-side" }, sub && status !== "na" ? reviewControls(sub.id, sub.note) : null),
     );
-  }
-  return h("div", {}, pageHead("Review submissions", "Approve documents or send them back with a note."), chips, list);
+  });
+
+  return h(
+    "div",
+    { className: "profile-wrap" },
+    h("a", { href: "#students", className: "btn ghost sm", style: "margin-bottom:12px" }, "← All students"),
+    head,
+    stats,
+    h("div", { className: "section-head" }, h("h2", {}, "Requirements and submissions")),
+    h("section", { className: "card phase" }, h("ul", { className: "activities" }, ...rows)),
+  );
 }
 
 // ======================================================================
 // Students (staff; admins can change roles)
 // ======================================================================
 
-async function studentsView() {
+async function studentsView(arg) {
+  if (arg) return studentDetailView(arg);
   const { users, totalRequirements } = await api("GET", "/api/admin/users");
   const search = h("input", {
     type: "search",
@@ -1392,7 +1633,12 @@ async function studentsView() {
         const pct = totalRequirements ? (u.approved / totalRequirements) * 100 : 0;
         return h(
           "tr",
-          {},
+          {
+            className: "clickable",
+            onclick: (e) => {
+              if (!e.target.closest("a, select, button")) location.hash = `students/${u.id}`;
+            },
+          },
           h(
             "td",
             {},
@@ -1403,7 +1649,7 @@ async function studentsView() {
               h(
                 "div",
                 {},
-                h("b", {}, u.fullName || "—"),
+                h("a", { href: `#students/${u.id}`, className: "name-link" }, h("b", {}, u.fullName || "—")),
                 h("small", {}, u.email, u.emailVerified ? "" : " · unverified"),
               ),
             ),
@@ -1447,7 +1693,22 @@ async function studentsView() {
   return h(
     "div",
     {},
-    pageHead("Students", `${users.length} account${users.length === 1 ? "" : "s"} · ${totalRequirements} requirements`),
+    pageHead(
+      "Students",
+      `${users.length} account${users.length === 1 ? "" : "s"} · ${totalRequirements} required ${totalRequirements === 1 ? "task" : "tasks"}`,
+      h(
+        "a",
+        { className: "btn outline sm", href: "/api/admin/export/progress.csv", download: "" },
+        icon("download", 15),
+        "Progress CSV",
+      ),
+      h(
+        "a",
+        { className: "btn outline sm", href: "/api/admin/export/companies.csv", download: "" },
+        icon("download", 15),
+        "Companies CSV",
+      ),
+    ),
     h("div", { className: "toolbar" }, search),
     card,
   );
@@ -1474,6 +1735,7 @@ function requirementDialog(item, items) {
             sortOrder: Number(f.get("sortOrder")),
             requiresFile: item?.kind === "companies" ? false : f.has("requiresFile"),
             available: f.has("available"),
+            optional: f.has("optional"),
           };
           run(form.querySelector("[type=submit]"), async () => {
             await api(
@@ -1540,6 +1802,12 @@ function requirementDialog(item, items) {
         { className: "check" },
         h("input", { name: "available", type: "checkbox", checked: item ? item.available : true }),
         "Open for students (untick to mark it N/A for now)",
+      ),
+      h(
+        "label",
+        { className: "check" },
+        h("input", { name: "optional", type: "checkbox", checked: item ? item.optional : false }),
+        "Optional (does not count toward progress)",
       ),
       h(
         "div",
@@ -1620,6 +1888,7 @@ async function requirementsView() {
                     {},
                     [
                       item.kind === "companies" ? "Company list" : item.requiresFile ? "File upload" : "No file",
+                      item.optional && "Optional",
                       item.dueDate && `Due ${fmtDay(item.dueDate)}`,
                     ]
                       .filter(Boolean)
@@ -1642,6 +1911,7 @@ async function requirementsView() {
                           sortOrder: item.sortOrder,
                           requiresFile: item.requiresFile,
                           available: !item.available,
+                          optional: item.optional,
                         });
                         toast(item.available ? "Marked N/A for now." : "Opened for students.");
                         await render();
@@ -1692,7 +1962,12 @@ const TABS = [
   { id: "profile", text: "Profile", icon: "user", build: profileView },
 ];
 
-let active = location.hash.slice(1) || "checklist";
+const parseRoute = () => {
+  const [tab, arg] = (location.hash.slice(1) || "checklist").split("/");
+  return { tab: tab || "checklist", arg };
+};
+let active = parseRoute().tab;
+let routeArg = parseRoute().arg; // e.g. the student id in #students/12
 let renderToken = 0;
 
 function paintTabs(available) {
@@ -1724,7 +1999,7 @@ async function render() {
   const token = ++renderToken;
   const scrollY = window.scrollY;
   try {
-    const node = await available.find((t) => t.id === active).build();
+    const node = await available.find((t) => t.id === active).build(routeArg);
     if (token !== renderToken) return; // a newer render started
     view.replaceChildren(node);
     window.scrollTo(0, scrollY);
@@ -1735,7 +2010,7 @@ async function render() {
 }
 
 window.addEventListener("hashchange", () => {
-  active = location.hash.slice(1) || "checklist";
+  ({ tab: active, arg: routeArg } = parseRoute());
   view.replaceChildren(h("div", { className: "skeleton" }), h("div", { className: "skeleton" }));
   window.scrollTo(0, 0);
   render();

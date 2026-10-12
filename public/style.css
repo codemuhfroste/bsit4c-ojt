@@ -1847,3 +1847,57 @@ dialog.modal .actions {
   font-size: 0.78rem;
   color: var(--muted);
 }
+
+/* ---------- Adviser views ---------- */
+.name-link {
+  color: inherit;
+  text-decoration: none;
+}
+.name-link:hover b {
+  text-decoration: underline;
+}
+tr.clickable {
+  cursor: pointer;
+}
+.page-head .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.act-side .decide {
+  display: grid;
+  gap: 8px;
+  min-width: 260px;
+}
+.act-side .decide .buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .act-side .decide {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* ---------- Per-company review ---------- */
+.company-list .review-line {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-strong);
+}
+.company-list .review-line input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 0.86rem;
+}
+.company-list .company-note {
+  flex: 1 1 100%;
+  margin-top: 0;
+}

@@ -7,7 +7,7 @@ import { parseEmail, parseId, parseLink, parseText } from "../validate.js";
 const router = Router();
 router.use(requireAuth);
 
-const shapeRequirement = (r) => ({
+export const shapeRequirement = (r) => ({
   id: Number(r.id),
   title: r.title,
   description: r.description,
@@ -17,6 +17,7 @@ const shapeRequirement = (r) => ({
   requiresFile: Boolean(r.requires_file),
   kind: r.kind,
   available: Boolean(r.available),
+  optional: Boolean(r.optional),
   submission: r.sub_id
     ? {
         id: Number(r.sub_id),
@@ -28,21 +29,29 @@ const shapeRequirement = (r) => ({
     : null,
 });
 
-router.get("/requirements", async (req, res) => {
+// A student's checklist. Progress counts only requirements that are open and not optional.
+export async function loadChecklist(userId) {
   const { rows } = await db.execute({
     sql: `SELECT r.*, s.id AS sub_id, s.status, s.note, s.file_name, s.updated_at AS sub_updated_at
           FROM requirements r
           LEFT JOIN submissions s ON s.requirement_id = r.id AND s.user_id = ?
           ORDER BY r.sort_order, r.id`,
-    args: [req.user.id],
+    args: [userId],
   });
   const items = rows.map(shapeRequirement);
-  const open = items.filter((i) => i.available); // closed ("N/A for now") requirements do not count
-  const count = (status) => open.filter((i) => i.submission?.status === status).length;
-  res.json({
+  const counted = items.filter((i) => i.available && !i.optional);
+  return {
     items,
-    progress: { total: open.length, submitted: open.filter((i) => i.submission).length, approved: count("approved") },
-  });
+    progress: {
+      total: counted.length,
+      submitted: counted.filter((i) => i.submission).length,
+      approved: counted.filter((i) => i.submission?.status === "approved").length,
+    },
+  };
+}
+
+router.get("/requirements", async (req, res) => {
+  res.json(await loadChecklist(req.user.id));
 });
 
 // Submitting needs a verified email. The file is optional only for requirements that do not require one.
@@ -124,7 +133,7 @@ router.get("/submissions/:id/file", async (req, res) => {
 
 const MAX_COMPANIES = 20;
 
-const shapeCompany = (c) => ({
+export const shapeCompany = (c) => ({
   id: Number(c.id),
   name: c.name,
   link: c.link,
@@ -132,6 +141,9 @@ const shapeCompany = (c) => ({
   location: c.location,
   applied: Boolean(c.applied),
   response: c.response,
+  moa: Boolean(c.moa),
+  review: c.review,
+  reviewNote: c.review_note,
   createdAt: c.created_at,
 });
 
@@ -218,7 +230,12 @@ router.put("/companies/:id", async (req, res) => {
   const id = parseId(req.params.id);
   const c = parseCompany(req.body);
   const result = await db.execute({
-    sql: "UPDATE companies SET name = ?, link = ?, email = ?, location = ?, applied = ?, response = ? WHERE id = ? AND user_id = ?",
+    // Changing the company itself (name, link or email) sends it back to "not reviewed"; ticking applied etc. does not.
+    sql: `UPDATE companies SET
+            review = CASE WHEN name = ?1 AND link = ?2 AND email = ?3 THEN review ELSE 'pending' END,
+            review_note = CASE WHEN name = ?1 AND link = ?2 AND email = ?3 THEN review_note ELSE '' END,
+            name = ?1, link = ?2, email = ?3, location = ?4, applied = ?5, response = ?6
+          WHERE id = ?7 AND user_id = ?8`,
     args: [c.name, c.link, c.email, c.location, c.applied, c.response, id, req.user.id],
   });
   if (!result.rowsAffected) throw new HttpError(404, "Company not found.");

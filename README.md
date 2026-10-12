@@ -39,10 +39,29 @@ The coordinator's first two tasks are open; every other requirement is shown cro
    focus one and press Enter) to flip it. There is no separate submit step: the task counts as submitted as soon as
    one company is added, students can keep adding (or editing/removing) companies at any time, and advisers see
    the current list in the review queue.
-2. **Resume / CV** – a PDF or image upload.
+2. **Resume / CV** – a PDF or image upload. It is **optional**: students can submit it, but it does not count toward
+   their progress.
 
 Admins can open or close any requirement (**Mark N/A** / **Open it** on the Requirements tab) as the coordinator
-releases the next tasks. Closed requirements cannot be submitted and are not counted in progress.
+releases the next tasks. Closed requirements cannot be submitted and are not counted in progress. The edit form also
+has an **Optional** checkbox for tasks that should not count toward progress.
+
+### How advisers check submissions
+
+- **Students tab** – every student with a progress bar and how many submissions await action. Click a student to open
+  their page: every requirement with its status, their files, their company list (links, emails, inside/outside,
+  applied, response), and Approve / Reject with a note right there.
+- **Review tab** – the queue across all students. Filter by Needs review / Rejected / Approved / All, and search by
+  student, ID or requirement. Click a student's name to jump to their page.
+- **Per-company review** – on the Review tab and on a student's page, every company has its own note box and
+  **Approve / Reject** buttons (a rejection needs a reason). Students see the result and the note on that company.
+  Editing a company's name, link or email sends it back to "Not reviewed"; ticking Applied or Response does not.
+  The overall decision on the whole list is still made with the Approve / Reject buttons on the right.
+- **MoA with BU** – advisers (not students) can flag a company as having a Memorandum of Agreement with the
+  university by double-clicking its **MoA** tag. Students see the **MoA with BU** tag on that company.
+- **Exports** – on the Students tab, **Progress CSV** (one row per student, a status column for each open
+  requirement) and **Companies CSV** (one row per company) for the coordinator. Values that look like spreadsheet
+  formulas are neutralised.
 
 ## Roles
 
@@ -84,13 +103,15 @@ All endpoints are JSON under `/api`. Sessions use an HttpOnly `sid` cookie. Erro
 
 **Staff** (`/api/admin`)
 
-| Endpoint                                             | Role    |
-| ---------------------------------------------------- | ------- |
-| `GET /users`, `GET /submissions?status=&userId=`     | adviser |
-| `POST /submissions/:id/review` `{ status, note }`    | adviser |
-| `POST /requirements`, `PUT/DELETE /requirements/:id` | admin   |
-| `PATCH /users/:id/role` `{ role }`                   | admin   |
-| `DELETE /users/:id/sessions`                         | admin   |
+| Endpoint                                                | Role    |
+| ------------------------------------------------------- | ------- |
+| `GET /users`, `GET /submissions?status=&userId=`        | adviser |
+| `POST /submissions/:id/review` `{ status, note }`       | adviser |
+| `POST /requirements`, `PUT/DELETE /requirements/:id`    | admin   |
+| `PATCH /users/:id/role` `{ role }`                      | admin   |
+| `DELETE /users/:id/sessions`                            | admin   |
+| `GET /users/:id` (a student's checklist + companies)    | adviser |
+| `GET /export/progress.csv`, `GET /export/companies.csv` | adviser |
 
 ## Security notes
 
