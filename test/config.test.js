@@ -42,3 +42,17 @@ test("no file names that Vercel treats as an Express entrypoint", () => {
     }
   }
 });
+
+test("APP_URL works with or without https:// and a trailing slash", async () => {
+  const { appUrl } = await import("../src/mailer.js");
+  const check = (value, expected) => {
+    if (value === undefined) delete process.env.APP_URL;
+    else process.env.APP_URL = value;
+    assert.equal(appUrl(), expected);
+  };
+  check("bsit4c-ojt.vercel.app", "https://bsit4c-ojt.vercel.app");
+  check("https://bsit4c-ojt.vercel.app/", "https://bsit4c-ojt.vercel.app");
+  check("  http://localhost:3000  ", "http://localhost:3000");
+  check("", "http://localhost:3000");
+  check(undefined, "http://localhost:3000");
+});

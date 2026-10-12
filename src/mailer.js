@@ -6,7 +6,12 @@ export const outbox = [];
 
 let transport;
 
-export const appUrl = () => (process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, "");
+// Public site address used in email links. A missing "https://" is added so a bare "example.vercel.app" still works.
+export function appUrl() {
+  const raw = (process.env.APP_URL || "").trim() || `http://localhost:${process.env.PORT || 3000}`;
+  const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return url.replace(/\/+$/, "");
+}
 
 export async function sendMail({ to, subject, text }) {
   if (!process.env.SMTP_URL) {
