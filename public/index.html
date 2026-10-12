@@ -1,75 +1,289 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BSIT 4C OJT Checklist</title>
-  <style>
-    :root { --bg:#f6f7f9; --card:#fff; --text:#1c1f24; --muted:#5f6670; --border:#d5d9df; --accent:#2455d6; --err:#b42318; --ok:#067647; }
-    @media (prefers-color-scheme: dark) {
-      :root { --bg:#14161a; --card:#1d2026; --text:#eceef2; --muted:#9aa1ad; --border:#363b44; --accent:#6c93ff; --err:#ff8a80; --ok:#5fd29b; }
-    }
-    * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:16px; background:var(--bg); color:var(--text); font:16px/1.5 system-ui, sans-serif; }
-    main { width:100%; max-width:380px; background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px; }
-    h1 { margin:0 0 4px; font-size:1.25rem; }
-    p.sub { margin:0 0 20px; color:var(--muted); font-size:.9rem; }
-    label { display:block; margin-bottom:14px; font-size:.9rem; }
-    input { display:block; width:100%; margin-top:4px; padding:10px; font:inherit; color:inherit; background:transparent; border:1px solid var(--border); border-radius:8px; }
-    input:focus-visible, button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-    button { width:100%; padding:10px; font:inherit; font-weight:600; color:#fff; background:var(--accent); border:0; border-radius:8px; cursor:pointer; }
-    button:disabled { opacity:.6; cursor:default; }
-    #msg { min-height:1.5em; margin:12px 0 0; font-size:.9rem; }
-    #msg.err { color:var(--err); } #msg.ok { color:var(--ok); }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>BSIT 4C OJT Checklist</h1>
-    <p class="sub">Register your email and password to get started.</p>
-    <form id="form" novalidate>
-      <label>Email
-        <input id="email" type="email" autocomplete="email" required>
-      </label>
-      <label>Password
-        <input id="password" type="password" autocomplete="new-password" minlength="8" maxlength="72" required>
-      </label>
-      <label>Confirm password
-        <input id="confirm" type="password" autocomplete="new-password" required>
-      </label>
-      <button id="submit" type="submit">Register</button>
-      <p id="msg" role="status" aria-live="polite"></p>
-    </form>
-  </main>
-  <script>
-    const form = document.getElementById("form");
-    const msg = document.getElementById("msg");
-    const submit = document.getElementById("submit");
-    const show = (text, kind) => { msg.textContent = text; msg.className = kind; };
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in · BSIT 4C OJT Checklist</title>
+    <meta name="description" content="Track and submit your OJT requirements for BSIT 4C." />
+    <link rel="icon" href="/img/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" />
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="auth">
+      <aside class="auth-hero">
+        <div class="brand-lg">
+          <img src="/img/logo.svg" alt="" />
+          <span>BSIT 4C · OJT Checklist</span>
+        </div>
+        <div>
+          <h2>Every OJT requirement, <em>one checklist.</em></h2>
+          <p class="lead">
+            Submit your documents, get them reviewed by your adviser, and watch your progress climb to 100%.
+          </p>
+        </div>
+        <img class="art" src="/img/hero.svg" alt="" />
+        <ul class="perks">
+          <li>Upload PDFs and photos straight from your phone</li>
+          <li>See what is approved, in review, or needs changes</li>
+          <li>Never miss a deadline with due dates up front</li>
+        </ul>
+      </aside>
 
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const email = form.email.value.trim();
-      const password = form.password.value;
-      if (password !== form.confirm.value) return show("Passwords do not match.", "err");
+      <main class="auth-panel">
+        <button
+          class="icon-btn plain corner theme-toggle"
+          type="button"
+          data-theme-toggle
+          aria-label="Toggle dark mode"
+        >
+          <svg
+            class="icon sun"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+            />
+          </svg>
+          <svg
+            class="icon moon"
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
 
-      submit.disabled = true;
-      show("", "");
-      try {
-        const res = await fetch("/api/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) { form.reset(); show("Registered! You are all set.", "ok"); }
-        else show(data.error || "Registration failed.", "err");
-      } catch {
-        show("Network error. Try again.", "err");
-      } finally {
-        submit.disabled = false;
-      }
-    });
-  </script>
-</body>
+        <div class="auth-card">
+          <div class="brand-sm">
+            <img src="/img/logo.svg" alt="" />
+            <span>BSIT 4C · OJT Checklist</span>
+          </div>
+
+          <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+          <div class="seg" id="seg" role="tablist" aria-label="Account">
+            <button type="button" role="tab" data-go="login">Log in</button>
+            <button type="button" role="tab" data-go="register">Create account</button>
+          </div>
+
+          <!-- Log in -->
+          <form id="login" novalidate hidden>
+            <h1>Welcome back</h1>
+            <p class="sub">Log in to see your requirements and submissions.</p>
+            <label class="field">
+              Email
+              <span class="input" data-icon="mail">
+                <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+              </span>
+            </label>
+            <label class="field">
+              <span class="label-row">
+                Password
+                <button class="btn link" type="button" data-go="forgot">Forgot password?</button>
+              </span>
+              <span class="input" data-icon="lock" data-toggle>
+                <input
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  placeholder="Your password"
+                  required
+                />
+              </span>
+            </label>
+            <button class="btn block" type="submit"><span class="label">Log in</span></button>
+            <p class="msg" role="alert"></p>
+            <p class="switch">
+              New here? <button class="btn link" type="button" data-go="register">Create an account</button>
+            </p>
+          </form>
+
+          <!-- Create account (2 steps) -->
+          <form id="register" novalidate hidden>
+            <h1>Create your account</h1>
+            <p class="sub">It takes about a minute.</p>
+            <ol class="stepper" aria-label="Progress">
+              <li data-step="1"><i>1</i> Your details</li>
+              <li data-step="2"><i>2</i> Account</li>
+            </ol>
+
+            <div data-pane="1">
+              <label class="field">
+                Full name
+                <span class="input" data-icon="user">
+                  <input name="fullName" autocomplete="name" maxlength="100" placeholder="Juan Dela Cruz" required />
+                </span>
+              </label>
+              <label class="field">
+                Student ID
+                <span class="input" data-icon="id">
+                  <input name="studentId" maxlength="30" placeholder="Your student number" required />
+                </span>
+              </label>
+              <button class="btn block" type="button" data-next><span class="label">Continue</span></button>
+            </div>
+
+            <div data-pane="2" hidden>
+              <label class="field">
+                Email
+                <span class="input" data-icon="mail">
+                  <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+                </span>
+              </label>
+              <label class="field">
+                Password
+                <span class="input" data-icon="lock" data-toggle>
+                  <input
+                    name="password"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="8"
+                    maxlength="72"
+                    placeholder="At least 8 characters"
+                    required
+                  />
+                </span>
+              </label>
+              <div class="strength" data-strength aria-live="polite">
+                <div class="bars"><i></i><i></i><i></i><i></i></div>
+                <span>Choose a password</span>
+              </div>
+              <label class="field">
+                Confirm password
+                <span class="input" data-icon="lock" data-toggle>
+                  <input
+                    name="confirm"
+                    type="password"
+                    autocomplete="new-password"
+                    placeholder="Type it again"
+                    required
+                  />
+                </span>
+              </label>
+              <ul class="hints" data-hints></ul>
+              <div class="btn-row">
+                <button class="btn outline" type="button" data-back>Back</button>
+                <button class="btn" type="submit"><span class="label">Create account</span></button>
+              </div>
+            </div>
+            <p class="msg" role="alert"></p>
+            <p class="switch">
+              Already registered? <button class="btn link" type="button" data-go="login">Log in</button>
+            </p>
+          </form>
+
+          <!-- Forgot password -->
+          <form id="forgot" novalidate hidden>
+            <h1>Reset your password</h1>
+            <p class="sub">Enter your email and we will send you a link to choose a new one.</p>
+            <label class="field">
+              Email
+              <span class="input" data-icon="mail">
+                <input name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+              </span>
+            </label>
+            <button class="btn block" type="submit"><span class="label">Send reset link</span></button>
+            <p class="msg" role="alert"></p>
+            <p class="switch"><button class="btn link" type="button" data-go="login">Back to log in</button></p>
+          </form>
+
+          <div id="sent" class="done-state" hidden>
+            <svg viewBox="0 0 96 96" width="96" height="96" aria-hidden="true">
+              <circle cx="48" cy="48" r="46" fill="var(--primary-soft)" />
+              <rect
+                x="22"
+                y="31"
+                width="52"
+                height="36"
+                rx="7"
+                fill="var(--surface)"
+                stroke="var(--primary)"
+                stroke-width="3"
+              />
+              <path
+                d="m24 36 24 18 24-18"
+                fill="none"
+                stroke="var(--primary)"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <circle cx="72" cy="30" r="10" fill="#f7a81b" />
+              <path
+                d="m67.5 30 3 3 5-6"
+                fill="none"
+                stroke="#0f2a5c"
+                stroke-width="2.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <h1>Check your inbox</h1>
+            <p class="sub">If that email is registered, a reset link is on its way. It expires in 1 hour.</p>
+            <button class="btn outline block" type="button" data-go="login">Back to log in</button>
+          </div>
+
+          <!-- Choose a new password (from the emailed link) -->
+          <form id="reset" novalidate hidden>
+            <h1>Choose a new password</h1>
+            <p class="sub">Pick something you have not used before.</p>
+            <label class="field">
+              New password
+              <span class="input" data-icon="lock" data-toggle>
+                <input
+                  name="password"
+                  type="password"
+                  autocomplete="new-password"
+                  minlength="8"
+                  maxlength="72"
+                  placeholder="At least 8 characters"
+                  required
+                />
+              </span>
+            </label>
+            <div class="strength" data-strength aria-live="polite">
+              <div class="bars"><i></i><i></i><i></i><i></i></div>
+              <span>Choose a password</span>
+            </div>
+            <label class="field">
+              Confirm new password
+              <span class="input" data-icon="lock" data-toggle>
+                <input
+                  name="confirm"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="Type it again"
+                  required
+                />
+              </span>
+            </label>
+            <ul class="hints" data-hints></ul>
+            <button class="btn block" type="submit"><span class="label">Set new password</span></button>
+            <p class="msg" role="alert"></p>
+          </form>
+
+          <p class="fine">BSIT 4C · On-the-Job Training</p>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/auth.js"></script>
+  </body>
 </html>

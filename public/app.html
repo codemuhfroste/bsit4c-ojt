@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BSIT 4C OJT Checklist</title>
+    <link rel="icon" href="/img/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" />
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="bar">
+        <a class="brand" href="/app.html" aria-label="BSIT 4C OJT Checklist home">
+          <img src="/img/logo.svg" alt="" />
+          <div>
+            <b>OJT Checklist</b>
+            <span>BSIT 4C</span>
+          </div>
+        </a>
+        <nav class="main-nav" id="tabs" aria-label="Sections"></nav>
+        <div class="header-end">
+          <span class="hi" id="who"></span>
+          <button class="icon-btn theme-toggle" type="button" data-theme-toggle aria-label="Toggle dark mode">
+            <svg
+              class="icon sun"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+              />
+            </svg>
+            <svg
+              class="icon moon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          </button>
+          <button class="icon-btn" id="logout" type="button" aria-label="Log out" title="Log out">
+            <svg
+              class="icon"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <nav class="nav-mobile" id="tabs-mobile" aria-label="Sections"></nav>
+    </header>
+    <main class="container" id="view">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
