@@ -2376,7 +2376,7 @@ table.sheet {
   font-variant-numeric: tabular-nums;
 }
 .co-badge.ok b {
-  color: var(--muted);
+  color: var(--ok);
 }
 .co-badge.review b {
   color: var(--warn);

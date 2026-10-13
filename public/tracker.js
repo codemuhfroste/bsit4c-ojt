@@ -54,12 +54,17 @@ function derive(data) {
 
 function columnsFor(data) {
   // Optional tasks (the resume) are left out of the grid, like the CSV.
+  // The "Find OJT companies" task and the company list are one thing to an adviser, so they share a single Companies
+  // column, in the place that task occupies.
   const reqCols = data.requirements
     .filter((r) => !r.optional && (r.available || state.showNa))
-    .map((req) => ({ key: `r${req.id}`, kind: "req", req, title: req.title, sub: req.available ? "" : "N/A for now" }));
+    .map((req) =>
+      req.kind === "companies"
+        ? { key: "companies", kind: "company", title: "Companies", sub: req.available ? "" : "N/A for now" }
+        : { key: `r${req.id}`, kind: "req", req, title: req.title, sub: req.available ? "" : "N/A for now" },
+    );
   return [
     ...reqCols,
-    { key: "companies", kind: "company", title: "Companies" },
     { key: "done", kind: "done", title: "Required done" },
     { key: "missing", kind: "missing", title: "Missing" },
     { key: "activity", kind: "time", title: "Last activity" },
@@ -140,8 +145,8 @@ export async function trackerView() {
   const sentence = (n) => `${n} compan${n === 1 ? "y" : "ies"}`;
 
   function companySentence(co) {
-    if (co.state === "none") return "no companies listed";
-    if (co.state === "ok") return `all ${sentence(co.total)} reviewed`;
+    if (co.state === "none") return "missing, no companies listed";
+    if (co.state === "ok") return `complete, all ${sentence(co.total)} confirmed`;
     if (co.state === "review") return `${co.pending.length} of ${sentence(co.total)} still in review`;
     return `${co.rejected.length} of ${sentence(co.total)} need changes`;
   }
@@ -167,12 +172,12 @@ export async function trackerView() {
         "aria-label": `${who}, ${col.title}: ${companySentence(co)}${names ? `: ${names}` : ""}`,
       },
       co.state === "none"
-        ? h("span", { className: "co-none" }, "—")
+        ? h("span", { className: "badge todo" }, icon(GLYPH.todo, 13), LABEL.todo)
         : h(
             "span",
             { className: `co-badge ${co.state}` },
             h("i", {}, icon(CO_GLYPH[co.state], 14)),
-            h("b", {}, String(count)),
+            co.state === "ok" ? h("b", {}, "Complete") : h("b", {}, String(count)),
             co.state !== "ok" && h("small", {}, co.state === "review" ? "in review" : "to fix"),
           ),
     );
@@ -310,7 +315,7 @@ export async function trackerView() {
             review,
             bad,
             rows.length,
-            `${ok} all reviewed · ${review} still in review · ${bad} with none listed or needing changes`,
+            `${ok} complete · ${review} still in review · ${bad} with none listed or needing changes`,
           ),
         );
       } else if (col.kind === "done") {
@@ -464,7 +469,7 @@ export async function trackerView() {
     const shown = shownFor(stu);
     const title =
       co.state === "ok"
-        ? `All ${sentence(co.total)} reviewed`
+        ? `All ${sentence(co.total)} confirmed`
         : co.state === "review"
           ? `${co.pending.length} still in review`
           : `${co.rejected.length} sent back for changes`;
@@ -502,7 +507,7 @@ export async function trackerView() {
         shown.length > POP_MAX && h("p", { className: "pop-foot" }, `+ ${shown.length - POP_MAX} more`),
         co.state !== "ok" &&
           co.total > shown.length &&
-          h("p", { className: "pop-foot" }, `${co.total - shown.length} more already reviewed`),
+          h("p", { className: "pop-foot" }, `${co.total - shown.length} more already confirmed`),
       ].filter(Boolean), // replaceChildren (unlike h) would print a literal "false"
     );
 
@@ -591,7 +596,7 @@ export async function trackerView() {
       h("span", { className: `legend-item ${s}` }, icon(GLYPH[s], 12), LABEL[s]),
     ),
     h("span", { className: "legend-sep" }),
-    h("span", { className: "legend-item co-ok" }, icon("check", 12), "Companies reviewed"),
+    h("span", { className: "legend-item co-ok" }, icon("check", 12), "Companies complete"),
     h("span", { className: "legend-item co-review" }, icon("clock", 12), "Companies in review"),
     h("span", { className: "legend-item co-changes" }, icon("alert", 12), "Companies sent back"),
     h("span", { className: "muted hint" }, "Hover a Companies cell for the names · Enter opens a student"),
