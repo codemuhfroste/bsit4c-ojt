@@ -157,7 +157,7 @@ router.get("/users", requireRole(...STAFF), async (_req, res) => {
       role: u.role,
       fullName: u.full_name,
       studentId: u.student_id,
-      emailVerified: Boolean(u.email_verified_at),
+      emailVerified: Boolean(u.email_verified_at) || STAFF.includes(u.role),
       submitted: Number(u.submitted),
       approved: Number(u.approved),
       inReview: Number(u.in_review),

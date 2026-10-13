@@ -468,6 +468,29 @@ describe("current tasks", () => {
     assert.equal((await student("GET", "/api/companies")).body.companies.length, 3);
   });
 
+  test("advisers never need to verify their email", async () => {
+    const c = client();
+    const reg = await c("POST", "/api/register", {
+      json: {
+        acceptPrivacy: true,
+        email: "unverified-adviser@example.com",
+        password: PASSWORD,
+        fullName: "New Adviser",
+      },
+    });
+    assert.equal(reg.status, 201);
+    assert.equal((await c("GET", "/api/me")).body.user.emailVerified, false); // a student still has to verify
+
+    const admin = await adminClient();
+    const id = (await c("GET", "/api/me")).body.user.id;
+    assert.equal((await admin("PATCH", `/api/admin/users/${id}/role`, { json: { role: "adviser" } })).status, 200);
+
+    assert.equal((await c("GET", "/api/me")).body.user.emailVerified, true); // an adviser does not
+    const listed = (await admin("GET", "/api/admin/users")).body.users.find((u) => u.id === id);
+    assert.equal(listed.emailVerified, true);
+    assert.equal((await c("GET", "/api/admin/tracker")).status, 200);
+  });
+
   test("company website is optional", async () => {
     const student = await registerAndVerify("nolink@example.com");
     const post = (body) => student("POST", "/api/companies", { json: { email: "N/A", location: "inside", ...body } });

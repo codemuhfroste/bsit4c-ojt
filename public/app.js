@@ -1,4 +1,5 @@
 import { api, avatar, fmtDate, fmtDay, h, icon, openDialog, parseDay, toast } from "/common.js";
+import { overviewView } from "/overview.js";
 import { trackerView } from "/tracker.js";
 
 const view = document.getElementById("view");
@@ -2128,7 +2129,14 @@ async function requirementsView() {
 // ======================================================================
 
 const TABS = [
-  { id: "checklist", text: "Checklist", icon: "list", build: checklistView },
+  // Advisers have no checklist of their own, so this tab is their overview of the class instead.
+  {
+    id: "checklist",
+    text: "Checklist",
+    label: () => (me.role === "adviser" ? "Overview" : "Checklist"),
+    icon: "list",
+    build: () => (me.role === "adviser" ? overviewView(me) : checklistView()),
+  },
   { id: "review", text: "Review", icon: "check", build: reviewView, show: isStaff },
   { id: "tracker", text: "Tracker", icon: "table", build: trackerView, show: isStaff },
   { id: "students", text: "Students", icon: "users", build: studentsView, show: isStaff },
@@ -2159,7 +2167,7 @@ function paintTabs(available) {
           },
         },
         withIcon && icon(t.icon, 16),
-        t.text,
+        t.label?.() ?? t.text,
       ),
     );
   desktop.replaceChildren(...make(true));

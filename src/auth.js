@@ -42,7 +42,8 @@ export function publicUser(row) {
     role: row.role,
     fullName: row.full_name,
     studentId: row.student_id,
-    emailVerified: Boolean(row.email_verified_at),
+    // Staff never have to verify an address: advisers and admins are added by an admin, not by self-service signup.
+    emailVerified: Boolean(row.email_verified_at) || STAFF.includes(row.role),
     joined: row.created_at,
     privacyAccepted: row.privacy_version === PRIVACY_VERSION,
   };

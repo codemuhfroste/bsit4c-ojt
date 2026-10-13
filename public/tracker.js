@@ -31,7 +31,7 @@ const coState = (c) =>
 
 // Where a student stands on the company list: nothing listed, some still waiting for the adviser, some sent back, or
 // every company reviewed.
-function companyInfo(list) {
+export function companyInfo(list) {
   const pending = list.filter((c) => c.review === "pending");
   const rejected = list.filter((c) => c.review === "rejected");
   const state = !list.length ? "none" : pending.length ? "review" : rejected.length ? "changes" : "ok";
