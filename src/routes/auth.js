@@ -73,10 +73,14 @@ router.post("/register", limiter(20), async (req, res) => {
     throw err;
   }
 
-  // The account exists now; a mail failure must not fail the signup (the user can resend from the app).
-  await sendVerification(email, await issueToken(id, "verify", 24 * HOUR)).catch((err) =>
-    console.error("[mail] verification email failed:", err.message),
-  );
+  // Nobody has to verify an address to use the app. The one exception is an address listed in ADMIN_EMAILS: it only
+  // becomes an admin once its owner proves it, so that is the only signup that still gets a verification email.
+  // A mail failure must not fail the signup.
+  if (adminEmails().has(email)) {
+    await sendVerification(email, await issueToken(id, "verify", 24 * HOUR)).catch((err) =>
+      console.error("[mail] verification email failed:", err.message),
+    );
+  }
   await startSession(res, id);
   res.status(201).json({ ok: true, user: publicUser(await getUserById(id)) });
 });

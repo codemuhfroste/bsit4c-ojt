@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.js";
-import { HttpError, STAFF, requireAuth, requireVerified } from "../auth.js";
+import { HttpError, STAFF, requireAuth } from "../auth.js";
 import { hasExpectedSignature, upload } from "../uploads.js";
 import { parseEmail, parseId, parseLink, parseText } from "../validate.js";
 
@@ -54,8 +54,8 @@ router.get("/requirements", async (req, res) => {
   res.json(await loadChecklist(req.user.id));
 });
 
-// Submitting needs a verified email. The file is optional only for requirements that do not require one.
-router.post("/requirements/:id/submit", requireVerified, upload.single("file"), async (req, res) => {
+// The file is optional only for requirements that do not require one.
+router.post("/requirements/:id/submit", upload.single("file"), async (req, res) => {
   const id = parseId(req.params.id);
   const { rows } = await db.execute({ sql: "SELECT * FROM requirements WHERE id = ?", args: [id] });
   const requirement = rows[0];
@@ -99,7 +99,7 @@ router.post("/requirements/:id/submit", requireVerified, upload.single("file"), 
   res.json({ ok: true });
 });
 
-router.delete("/requirements/:id/submission", requireVerified, async (req, res) => {
+router.delete("/requirements/:id/submission", async (req, res) => {
   const id = parseId(req.params.id);
   const { rows } = await db.execute({
     sql: `SELECT s.id, s.status, r.kind FROM submissions s JOIN requirements r ON r.id = s.requirement_id

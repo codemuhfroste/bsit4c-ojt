@@ -42,8 +42,7 @@ export function publicUser(row) {
     role: row.role,
     fullName: row.full_name,
     studentId: row.student_id,
-    // Staff never have to verify an address: advisers and admins are added by an admin, not by self-service signup.
-    emailVerified: Boolean(row.email_verified_at) || STAFF.includes(row.role),
+    emailVerified: Boolean(row.email_verified_at),
     joined: row.created_at,
     privacyAccepted: row.privacy_version === PRIVACY_VERSION,
   };
@@ -107,11 +106,6 @@ export const requireRole =
     if (!roles.includes(req.user.role)) throw new HttpError(403, "You do not have access to this.");
     next();
   };
-
-export function requireVerified(req, _res, next) {
-  if (!req.user.emailVerified) throw new HttpError(403, "Verify your email address first.");
-  next();
-}
 
 // One-time tokens (email verification / password reset). Only the hash is stored.
 export async function issueToken(userId, purpose, ttlMs) {

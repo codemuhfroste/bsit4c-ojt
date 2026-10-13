@@ -9,6 +9,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "ojt-mailfail-"));
 process.env.NODE_ENV = "test";
 process.env.TURSO_DATABASE_URL = `file:${path.join(tmp, "test.db")}`;
 process.env.SMTP_URL = "smtp://127.0.0.1:1"; // nothing listens here: every send fails
+process.env.ADMIN_EMAILS = "down@example.com"; // only an ADMIN_EMAILS signup still sends a verification email
 process.env.RATE_LIMIT_SCALE = "100";
 
 const { createApp } = await import("../src/create-app.js");

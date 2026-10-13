@@ -212,7 +212,7 @@ async function start() {
     try {
       await api("POST", "/api/verify", { token: params.get("verify") });
       verified = "1";
-      say("ok", "Email verified. You can now submit requirements.");
+      say("ok", "Email verified.");
     } catch (err) {
       verified = "0";
       say("err", err.message);

@@ -1,6 +1,6 @@
 # bsit4c-ojt
 
-OJT requirements checklist for BSIT 4C. Students register, verify their email, and submit each OJT requirement
+OJT requirements checklist for BSIT 4C. Students register and submit each OJT requirement
 (optionally with a PDF/PNG/JPEG upload). Advisers and admins review submissions and track class progress.
 
 ## Setup
@@ -23,12 +23,14 @@ Open http://localhost:3000.
 
 Set `ADMIN_EMAILS=you@school.edu` in `.env`, then register with that address and **verify it** with the emailed
 link. It becomes an admin as soon as it is verified (an unverified address is never promoted, so nobody can claim
-an admin address before its owner does). Admins can then promote others to `adviser` or `admin` from the **Students** tab.
+an admin address before its owner does). This is the only place email verification still matters: **nobody else has
+to verify their email**, no verification email is sent for ordinary signups, and unverified accounts can submit
+requirements like anyone else. Admins can then promote others to `adviser` or `admin` from the **Students** tab.
 
 ### Email
 
-With `SMTP_URL` set (e.g. `smtps://user:pass@smtp.example.com`), verification and password-reset emails are sent for
-real. Without it they are printed to the server console, so in development copy the link from there.
+With `SMTP_URL` set (e.g. `smtps://user:pass@smtp.example.com`), the admin verification and password-reset emails are sent
+for real. Without it they are printed to the server console, so in development copy the link from there.
 
 ## Current tasks
 
@@ -62,7 +64,7 @@ has an **Optional** checkbox for tasks that should not count toward progress.
   focus) the cell** to see the companies by name: all of them for the green check, only the ones still in review for
   the clock. Optional tasks such as the resume are not shown. The header and student column stay in view while you
   scroll, and a totals row is pinned at the bottom. Click a header to sort (most urgent first), filter by _Has missing
-  work / Waiting for review / Complete / Unverified email_, search by student, ID, email **or company name**, and tick
+  work / Waiting for review / Complete_, search by student, ID, email **or company name**, and tick
   **Show N/A tasks** to include the closed requirements. **Export to Excel (CSV)** still lists every company name in
   its own column (Name, Student ID, Email, task statuses, Required approved, Company 1…N). Arrow keys move between
   cells; Enter or double-click opens the student. It refreshes itself every minute.
@@ -84,7 +86,7 @@ has an **Optional** checkbox for tasks that should not count toward progress.
 | `adviser` | Everything a student can, plus review submissions and view all students.        |
 | `admin`   | Everything an adviser can, plus manage requirements and change user roles.      |
 
-Submitting requires a verified email. Approved submissions are locked; rejected ones show the reviewer's note and can
+Approved submissions are locked; rejected ones show the reviewer's note and can
 be re-submitted.
 
 ## API
@@ -99,7 +101,7 @@ All endpoints are JSON under `/api`. Sessions use an HttpOnly `sid` cookie. Erro
 | `POST /login`, `POST /logout` |                                                                    |
 | `GET /me`, `PATCH /me`        | Read / update profile fields                                       |
 | `POST /me/password`           | `currentPassword`, `newPassword`; signs out other devices          |
-| `POST /verify`                | `{ token }` from the emailed link                                  |
+| `POST /verify`                | `{ token }` from the emailed link (only `ADMIN_EMAILS` addresses)  |
 | `POST /verify/resend`         | Logged-in users                                                    |
 | `POST /password/forgot`       | `{ email }`; always 200                                            |
 | `POST /password/reset`        | `{ token, password }`; signs out all devices                       |
@@ -199,7 +201,7 @@ Things to know on Vercel:
 
 - **Uploads** are stored in Turso and limited to 4 MB, because Vercel rejects request bodies over 4.5 MB.
 - **SMTP is required.** In production, verification and reset links are never logged, so without `SMTP_URL`
-  nobody can verify their email or reset a password.
+  nobody can reset a password (or verify an `ADMIN_EMAILS` address).
 - **Rate limits** are counted per function instance (in memory), so they slow down guessing but are not a hard
   global cap. Put Vercel's firewall rate limiting in front if you need one.
 - `NODE_ENV=production` and the proxy setting are applied automatically on Vercel.

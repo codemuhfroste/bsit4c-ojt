@@ -15,6 +15,7 @@ delete process.env.SMTP_URL;
 const { createApp } = await import("../src/create-app.js");
 const { migrate, db } = await import("../src/db.js");
 const { outbox } = await import("../src/mailer.js");
+const { issueToken } = await import("../src/auth.js");
 
 const PASSWORD = "correct horse";
 const RESUME = 5; // seeded id of "Resume / CV", one of the two requirements open for now
@@ -53,8 +54,11 @@ async function registerAndVerify(email) {
     json: { acceptPrivacy: true, email, password: PASSWORD, fullName: "Test User" },
   });
   assert.equal(reg.status, 201);
-  const ver = await c("POST", "/api/verify", { json: { token: lastMailToken(email, "verify") } });
-  assert.equal(ver.status, 200);
+  // Ordinary signups are sent no verification email (nobody has to verify); an ADMIN_EMAILS address is.
+  if (outbox.some((m) => m.to === email && m.text.includes("?verify="))) {
+    const ver = await c("POST", "/api/verify", { json: { token: lastMailToken(email, "verify") } });
+    assert.equal(ver.status, 200);
+  }
   return c;
 }
 
@@ -193,7 +197,8 @@ describe("email verification and password reset", () => {
     await c("POST", "/api/register", {
       json: { acceptPrivacy: true, email: "verify@example.com", password: PASSWORD },
     });
-    const token = lastMailToken("verify@example.com", "verify");
+    const id = (await c("GET", "/api/me")).body.user.id;
+    const token = await issueToken(id, "verify", 60 * 60 * 1000);
     assert.equal((await c("POST", "/api/verify", { json: { token } })).status, 200);
     assert.equal((await c("GET", "/api/me")).body.user.emailVerified, true);
     assert.equal((await c("POST", "/api/verify", { json: { token } })).status, 400);
@@ -261,13 +266,15 @@ describe("checklist", () => {
     assert.equal(body.progress.approved, 0);
   });
 
-  test("unverified users cannot submit", async () => {
+  test("nobody has to verify an email: no verification mail, and unverified users can submit", async () => {
     const c = client();
     await c("POST", "/api/register", {
       json: { acceptPrivacy: true, email: "unverified@example.com", password: PASSWORD },
     });
+    assert.ok(!outbox.some((m) => m.to === "unverified@example.com"), "ordinary signups are not emailed");
     const res = await c("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf()) });
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 200);
+    assert.equal((await c("DELETE", `/api/requirements/${RESUME}/submission`)).status, 200);
   });
 
   test("validates uploads", async () => {
@@ -468,29 +475,6 @@ describe("current tasks", () => {
     assert.equal((await student("GET", "/api/companies")).body.companies.length, 3);
   });
 
-  test("advisers never need to verify their email", async () => {
-    const c = client();
-    const reg = await c("POST", "/api/register", {
-      json: {
-        acceptPrivacy: true,
-        email: "unverified-adviser@example.com",
-        password: PASSWORD,
-        fullName: "New Adviser",
-      },
-    });
-    assert.equal(reg.status, 201);
-    assert.equal((await c("GET", "/api/me")).body.user.emailVerified, false); // a student still has to verify
-
-    const admin = await adminClient();
-    const id = (await c("GET", "/api/me")).body.user.id;
-    assert.equal((await admin("PATCH", `/api/admin/users/${id}/role`, { json: { role: "adviser" } })).status, 200);
-
-    assert.equal((await c("GET", "/api/me")).body.user.emailVerified, true); // an adviser does not
-    const listed = (await admin("GET", "/api/admin/users")).body.users.find((u) => u.id === id);
-    assert.equal(listed.emailVerified, true);
-    assert.equal((await c("GET", "/api/admin/tracker")).status, 200);
-  });
-
   test("company website is optional", async () => {
     const student = await registerAndVerify("nolink@example.com");
     const post = (body) => student("POST", "/api/companies", { json: { email: "N/A", location: "inside", ...body } });
@@ -647,7 +631,7 @@ describe("current tasks", () => {
 
     const progress = await text("/api/admin/export/progress.csv");
     assert.ok(
-      progress.startsWith("\uFEFFName,Student ID,Email,Email verified,Find OJT companies,Required approved,Company 1"),
+      progress.startsWith("\uFEFFName,Student ID,Email,Find OJT companies,Required approved,Company 1"),
       progress.split("\r\n")[0],
     );
     assert.ok(!progress.split("\r\n")[0].includes("Resume"), "optional tasks are not in the export");
@@ -874,7 +858,6 @@ describe("current tasks", () => {
         ["Wait Co 2", "inside"],
       ],
     ); // exact names, in the order they were added
-    assert.equal(z.emailVerified, false);
     assert.ok(a.lastActivity && z.lastActivity, "everyone has a last-activity time (at least their signup)");
     assert.ok(!JSON.stringify(body).match(/password|hash/i), "nothing sensitive in the grid data");
   });

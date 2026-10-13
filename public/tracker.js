@@ -95,7 +95,6 @@ export async function trackerView() {
       if (state.filter === "missing") return s.missing.length > 0;
       if (state.filter === "pending") return s.pending > 0;
       if (state.filter === "complete") return s.complete;
-      if (state.filter === "unverified") return !s.emailVerified;
       return true;
     });
     const col = cols.find((c) => c.key === state.sortKey);
@@ -217,7 +216,7 @@ export async function trackerView() {
               "div",
               {},
               h("a", { href: `#students/${stu.id}`, className: "name-link" }, h("b", {}, stu.fullName || stu.email)),
-              h("small", {}, [stu.studentId, stu.emailVerified ? "" : "unverified"].filter(Boolean).join(" · ")),
+              h("small", {}, stu.studentId),
             ),
           ),
         ),
@@ -377,7 +376,6 @@ export async function trackerView() {
         chip("missing", "Has missing work", all.filter((s) => s.missing.length).length),
         chip("pending", "Waiting for review", all.filter((s) => s.pending > 0).length),
         chip("complete", "Complete", all.filter((s) => s.complete).length),
-        chip("unverified", "Unverified email", all.filter((s) => !s.emailVerified).length),
       ),
       h(
         "label",

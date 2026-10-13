@@ -718,7 +718,6 @@ function activity(item) {
   const na = status === "na";
   const isCompanies = item.kind === "companies";
   const locked = status === "approved";
-  const blocked = !me.emailVerified;
   const li = h("li", { className: `activity${na ? " na" : ""}`, id: `req-${item.id}`, "data-status": status });
   let panel = null;
 
@@ -804,7 +803,6 @@ function activity(item) {
       {
         type: "button",
         className: "btn link",
-        disabled: blocked,
         onclick: (e) =>
           run(e.currentTarget, async () => {
             await api("DELETE", `/api/requirements/${item.id}/submission`);
@@ -816,7 +814,6 @@ function activity(item) {
     );
 
   const side = h("div", { className: "act-side" });
-  const lockTitle = blocked ? "Verify your email to submit" : undefined;
 
   if (na) {
     put(side, pill("na", false));
@@ -848,11 +845,7 @@ function activity(item) {
         "div",
         { className: "act-links" },
         item.requiresFile &&
-          h(
-            "button",
-            { type: "button", className: "btn link", disabled: blocked, onclick: togglePanel },
-            "Replace file",
-          ),
+          h("button", { type: "button", className: "btn link", onclick: togglePanel }, "Replace file"),
         withdraw(),
       ),
     );
@@ -866,8 +859,6 @@ function activity(item) {
         {
           type: "button",
           className: "btn sm done-btn",
-          disabled: blocked,
-          title: lockTitle,
           onclick: (e) => {
             if (item.requiresFile) return togglePanel();
             run(e.currentTarget, async () => {
@@ -1042,7 +1033,6 @@ async function checklistView() {
   return h(
     "div",
     {},
-    !me.emailVerified && verifyBanner(),
     h(
       "div",
       { className: "checklist-layout" },
@@ -1057,29 +1047,6 @@ async function checklistView() {
           : [h("div", { className: "card" }, empty("Nothing here", "No requirements match this filter."))]),
       ),
     ),
-  );
-}
-
-function verifyBanner() {
-  const btn = h(
-    "button",
-    {
-      type: "button",
-      className: "btn link",
-      onclick: () =>
-        run(btn, async () => {
-          await api("POST", "/api/verify/resend");
-          toast("Verification email sent.");
-        }),
-    },
-    "Resend email",
-  );
-  return h(
-    "div",
-    { className: "banner" },
-    icon("mail", 18),
-    h("span", {}, "Verify your email to upload files. Check your inbox, and your spam folder, for the link."),
-    btn,
   );
 }
 
@@ -1344,9 +1311,6 @@ async function profileView() {
             { className: "line" },
             h("span", {}, me.joined ? `Joined ${fmtDate(me.joined)}` : "Join date unknown"),
             h("span", { className: "pill solid" }, ROLE_LABEL[me.role]),
-            me.emailVerified
-              ? h("span", { className: "pill approved" }, icon("check", 13), "Verified")
-              : h("span", { className: "pill submitted" }, icon("alert", 13), "Not verified"),
           ),
           h("p", { className: "muted", style: "margin-top:6px;font-size:.9rem" }, "BSIT 4C · On-the-Job Training"),
         ),
@@ -1491,7 +1455,6 @@ async function profileView() {
   return h(
     "div",
     { className: "profile-wrap" },
-    !me.emailVerified && verifyBanner(),
     identity,
     stats,
     h("div", { className: "section-head" }, h("h2", {}, "Submission history")),
@@ -1659,9 +1622,6 @@ async function studentDetailView(id) {
             { className: "line" },
             h("span", {}, u.joined ? `Joined ${fmtDate(u.joined)}` : "Join date unknown"),
             h("span", { className: "pill solid" }, ROLE_LABEL[u.role]),
-            u.emailVerified
-              ? h("span", { className: "pill approved" }, icon("check", 13), "Verified")
-              : h("span", { className: "pill submitted" }, icon("alert", 13), "Not verified"),
           ),
         ),
       ),
@@ -1824,7 +1784,7 @@ async function studentsView(arg) {
                 "div",
                 {},
                 h("a", { href: `#students/${u.id}`, className: "name-link" }, h("b", {}, u.fullName || "—")),
-                h("small", {}, u.email, u.emailVerified ? "" : " · unverified"),
+                h("small", {}, u.email),
               ),
             ),
           ),
@@ -2223,9 +2183,7 @@ if (me) {
   const verified = new URLSearchParams(location.search).get("verified");
   if (verified) {
     toast(
-      verified === "1"
-        ? "Email verified. You can now submit requirements."
-        : "That verification link is invalid or has expired.",
+      verified === "1" ? "Email verified." : "That verification link is invalid or has expired.",
       verified === "1" ? "ok" : "err",
     );
     history.replaceState(null, "", location.pathname + location.hash);

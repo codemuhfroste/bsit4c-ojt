@@ -75,7 +75,7 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
     "SELECT id, title, phase, kind, available, optional FROM requirements ORDER BY sort_order, id",
   );
   const { rows: students } = await db.execute(
-    `SELECT id, full_name, student_id, email, email_verified_at, created_at FROM users WHERE ${CLASS_ROLES} ORDER BY full_name, email`,
+    `SELECT id, full_name, student_id, email, created_at FROM users WHERE ${CLASS_ROLES} ORDER BY full_name, email`,
   );
   const { rows: subs } = await db.execute("SELECT id, user_id, requirement_id, status, updated_at FROM submissions");
   const { rows: comps } = await db.execute(
@@ -112,7 +112,6 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
         fullName: u.full_name,
         studentId: u.student_id,
         email: u.email,
-        emailVerified: Boolean(u.email_verified_at),
         cells: Object.fromEntries(mine.map((x) => [Number(x.requirement_id), { status: x.status, id: Number(x.id) }])),
         // The exact names, in the order the student added them (this is what the grid and its CSV show).
         companyList: list.map((c) => ({
@@ -143,7 +142,7 @@ router.get("/users", requireRole(...STAFF), async (_req, res) => {
     (await db.execute("SELECT COUNT(*) AS n FROM requirements WHERE available = 1 AND optional = 0")).rows[0].n,
   );
   const { rows } = await db.execute(`
-    SELECT u.id, u.email, u.role, u.full_name, u.student_id, u.email_verified_at,
+    SELECT u.id, u.email, u.role, u.full_name, u.student_id,
            COUNT(s.id) AS submitted,
            COALESCE(SUM(s.status = 'approved'), 0) AS approved,
            COALESCE(SUM(s.status = 'submitted'), 0) AS in_review
@@ -161,7 +160,6 @@ router.get("/users", requireRole(...STAFF), async (_req, res) => {
       role: u.role,
       fullName: u.full_name,
       studentId: u.student_id,
-      emailVerified: Boolean(u.email_verified_at) || STAFF.includes(u.role),
       submitted: Number(u.submitted),
       approved: Number(u.approved),
       inReview: Number(u.in_review),
@@ -290,7 +288,6 @@ router.get("/export/progress.csv", requireRole(...STAFF), async (_req, res) => {
       "Name",
       "Student ID",
       "Email",
-      "Email verified",
       ...reqs.map((r) => r.title),
       "Required approved",
       ...Array.from({ length: slots }, (_, i) => `Company ${i + 1}`),
@@ -303,7 +300,6 @@ router.get("/export/progress.csv", requireRole(...STAFF), async (_req, res) => {
       u.full_name,
       u.student_id,
       u.email,
-      u.email_verified_at ? "Yes" : "No",
       ...reqs.map((r) => STATUS_LABEL[status.get(`${u.id}:${r.id}`)] ?? "To do"),
       `${approved}/${reqs.length}`,
       ...Array.from({ length: slots }, (_, i) => names[i] ?? ""),
