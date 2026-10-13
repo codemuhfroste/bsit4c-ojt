@@ -300,7 +300,9 @@ function buildCompanyRow(c, { patch, actions = [], staff = false }) {
       "div",
       { className: "grow" },
       h("b", {}, c.name),
-      h("a", { href: c.link, target: "_blank", rel: "noopener noreferrer" }, icon("link", 13), prettyLink(c.link)),
+      c.link
+        ? h("a", { href: c.link, target: "_blank", rel: "noopener noreferrer" }, icon("link", 13), prettyLink(c.link))
+        : h("span", { className: "muted mail" }, icon("link", 13), "Website: none"),
       c.email
         ? h("a", { href: `mailto:${encodeURIComponent(c.email)}` }, icon("mail", 13), c.email)
         : h("span", { className: "muted mail" }, icon("mail", 13), "Email: N/A"),
@@ -421,16 +423,19 @@ const EMAIL_RE = /^[A-Za-z0-9._+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 function normalizeCompany(raw, editing) {
   const name = raw.name.trim();
   if (!name) throw new Error("Company name is required.");
+  let link = ""; // the Facebook page or website is optional
   let text = raw.link.trim();
-  if (!text) throw new Error("Add the company's Facebook page or website.");
-  if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    throw new Error("That link does not look valid.");
+  if (text) {
+    if (!/^https?:\/\//i.test(text)) text = `https://${text}`;
+    let url;
+    try {
+      url = new URL(text);
+    } catch {
+      throw new Error("That link does not look valid.");
+    }
+    if (!url.hostname.includes(".") || url.href.length > 300) throw new Error("That link does not look valid.");
+    link = url.href;
   }
-  if (!url.hostname.includes(".") || url.href.length > 300) throw new Error("That link does not look valid.");
 
   let email = "";
   if (!raw.noEmail) {
@@ -442,7 +447,7 @@ function normalizeCompany(raw, editing) {
     throw new Error(`You can list up to ${MAX_COMPANIES} companies.`);
   }
   const applied = Boolean(raw.applied);
-  return { name, link: url.href, email, location: raw.location, applied, response: applied ? raw.response : "none" };
+  return { name, link, email, location: raw.location, applied, response: applied ? raw.response : "none" };
 }
 
 const toApi = (fields) => ({ ...fields, email: fields.email || "N/A" });
@@ -551,8 +556,7 @@ function companyPanel(editing, close) {
     name: "link",
     value: editing?.link ?? "",
     maxLength: 300,
-    required: true,
-    placeholder: "facebook.com/yourpage or www.company.com",
+    placeholder: "facebook.com/yourpage or www.company.com (optional)",
   });
   const email = h("input", {
     name: "email",
@@ -638,7 +642,7 @@ function companyPanel(editing, close) {
       },
     },
     h("label", { className: "field" }, "Company name", name),
-    h("label", { className: "field" }, "Facebook page or website", link),
+    h("label", { className: "field" }, "Facebook page or website (optional)", link),
     h("label", { className: "field" }, "Company email", email),
     h("label", { className: "check" }, noEmail, "No email (N/A)"),
     h(

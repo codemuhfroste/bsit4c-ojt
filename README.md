@@ -34,7 +34,7 @@ real. Without it they are printed to the server console, so in development copy 
 
 The coordinator's first two tasks are open; every other requirement is shown crossed out as **N/A for now**:
 
-1. **Find OJT companies** – each student lists companies with their Facebook page or website, the company email
+1. **Find OJT companies** – each student lists companies with their Facebook page or website (optional), the company email
    (or N/A), and whether they are inside or outside Legazpi. Each company also tracks **Applied / Not applied** and,
    once applied, the company's response: **No response / Accepted / Denied**. Double-click any of those tags (or
    focus one and press Enter) to flip it. There is no separate submit step: the task counts as submitted as soon as
@@ -54,18 +54,18 @@ has an **Optional** checkbox for tasks that should not count toward progress.
   applied, response), and Approve / Reject with a note right there.
 - **Review tab** – the queue across all students. Filter by Needs review / Rejected / Approved / All, and search by
   student, ID or requirement. Click a student's name to jump to their page.
-- **Tracker tab** – a full-screen, spreadsheet-style grid for monitoring the whole class: one row per student, with
-  row numbers and column letters. Columns are the required tasks (colour-coded **Done**, **In review**,
-  **Needs changes**, hatched red **Missing**), then **Company 1, Company 2, …** holding the **exact company names**
-  each student listed (shaded by outcome: accepted, applied, denied, not applied yet; a shield marks a company with a
-  MoA), then **Required done**, a **Missing** column naming what each student still has to do, and **Last activity**.
-  Optional tasks such as the resume are not shown. The header, row numbers and student column stay in view while you
-  scroll, and a totals row is pinned at the bottom. Click a header to sort (most urgent first, or company names
-  A–Z), filter by _Has missing work / Waiting for review / Complete / Unverified email_, search by student, ID, email
-  **or company name**, and tick **Show N/A tasks** to include the closed requirements. **Export to Excel (CSV)**
-  downloads exactly this layout (Name, Student ID, Email, task statuses, Required approved, Company 1…N), so the
-  sheet in Excel matches the grid. Arrow keys move between cells; Enter or double-click opens the student. It
-  refreshes itself every minute.
+- **Tracker tab** – a full-screen grid for monitoring the whole class: one row per student. Columns are the required
+  tasks (**Done**, **In review**, **Needs changes**, outlined red **Missing**), then a single **Companies** column,
+  **Required done**, a **Missing** column naming what each student still has to do, and **Last activity**. The
+  Companies cell is one glance: a **green check** when every company the student listed has been reviewed, an amber
+  **clock** with a count when some are still in review, or a red **alert** when some were sent back. **Hover (or
+  focus) the cell** to see the companies by name: all of them for the green check, only the ones still in review for
+  the clock. Optional tasks such as the resume are not shown. The header and student column stay in view while you
+  scroll, and a totals row is pinned at the bottom. Click a header to sort (most urgent first), filter by _Has missing
+  work / Waiting for review / Complete / Unverified email_, search by student, ID, email **or company name**, and tick
+  **Show N/A tasks** to include the closed requirements. **Export to Excel (CSV)** still lists every company name in
+  its own column (Name, Student ID, Email, task statuses, Required approved, Company 1…N). Arrow keys move between
+  cells; Enter or double-click opens the student. It refreshes itself every minute.
 - **Per-company review** – on the Review tab and on a student's page, every company has its own note box and
   **Approve / Reject** buttons (a rejection needs a reason). Students see the result and the note on that company.
   Editing a company's name, link or email sends it back to "Not reviewed"; ticking Applied or Response does not.

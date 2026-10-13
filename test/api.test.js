@@ -409,7 +409,6 @@ describe("current tasks", () => {
     );
 
     assert.equal((await add(student, { name: "", link: "acme.com", location: "inside" })).status, 400);
-    assert.equal((await add(student, { name: "Acme", link: "", location: "inside" })).status, 400);
     assert.equal((await add(student, { name: "Acme", link: "javascript:alert(1)", location: "inside" })).status, 400);
     assert.equal((await add(student, { name: "Acme", link: "acme.com", location: "mars" })).status, 400);
     assert.equal(await state(student), null); // failed attempts submit nothing
@@ -467,6 +466,22 @@ describe("current tasks", () => {
     assert.equal((await state(student)).status, "approved");
     assert.equal((await student("DELETE", `/api/companies/${first.body.id}`)).status, 200);
     assert.equal((await student("GET", "/api/companies")).body.companies.length, 3);
+  });
+
+  test("company website is optional", async () => {
+    const student = await registerAndVerify("nolink@example.com");
+    const post = (body) => student("POST", "/api/companies", { json: { email: "N/A", location: "inside", ...body } });
+    assert.equal((await post({ name: "No Link Inc", link: "" })).status, 201);
+    assert.equal((await post({ name: "Missing Field Inc" })).status, 201);
+    assert.equal((await post({ name: "Bad Link Inc", link: "javascript:alert(1)" })).status, 400);
+    const list = (await student("GET", "/api/companies")).body.companies;
+    assert.deepEqual(
+      list.map((c) => [c.name, c.link]),
+      [
+        ["No Link Inc", ""],
+        ["Missing Field Inc", ""],
+      ],
+    );
   });
 
   test("company email (N/A allowed) and applied flag", async () => {
