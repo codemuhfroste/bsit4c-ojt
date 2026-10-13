@@ -63,12 +63,7 @@ function columnsFor(data) {
         ? { key: "companies", kind: "company", title: "Companies", sub: req.available ? "" : "N/A for now" }
         : { key: `r${req.id}`, kind: "req", req, title: req.title, sub: req.available ? "" : "N/A for now" },
     );
-  return [
-    ...reqCols,
-    { key: "done", kind: "done", title: "Required done" },
-    { key: "missing", kind: "missing", title: "Missing" },
-    { key: "activity", kind: "time", title: "Last activity" },
-  ];
+  return [...reqCols, { key: "activity", kind: "time", title: "Last activity" }];
 }
 
 export async function trackerView() {
@@ -108,8 +103,6 @@ export async function trackerView() {
       if (state.sortKey === "name") return (s.fullName || s.email).toLowerCase();
       if (col?.kind === "req") return RANK[info.statusFor(s, col.req)] ?? 9;
       if (col?.kind === "company") return CO_RANK[s.companies.state] * 100 - s.companies.pending.length;
-      if (state.sortKey === "done") return s.done;
-      if (state.sortKey === "missing") return s.missing.length;
       if (state.sortKey === "activity") return s.lastActivity || "";
       return "";
     };
@@ -202,36 +195,9 @@ export async function trackerView() {
     );
   }
 
-  function otherCell(stu, col, r, c, info) {
+  function otherCell(stu, col, r, c) {
     const base = { tabindex: "-1", "data-r": r, "data-c": c };
     if (col.kind === "company") return companyCell(stu, col, base);
-    if (col.kind === "done") {
-      const total = info.required.length;
-      const pct = total ? (stu.done / total) * 100 : 0;
-      return h(
-        "td",
-        { ...base, className: "cell done-cell" },
-        h("span", { className: "tabular" }, `${stu.done}/${total}`),
-        h("span", { className: "mini" }, h("i", { style: `width:${pct}%` })),
-      );
-    }
-    if (col.kind === "missing") {
-      if (!stu.missing.length) {
-        return h(
-          "td",
-          { ...base, className: "cell ok-cell" },
-          icon("check", 13),
-          stu.pending ? "None (awaiting review)" : "None",
-        );
-      }
-      const names = stu.missing.map((r) => r.title);
-      return h(
-        "td",
-        { ...base, className: "cell missing-cell", title: names.join(", ") },
-        h("span", { className: "badge-n" }, String(names.length)),
-        h("span", { className: "names" }, names.join(", ")),
-      );
-    }
     return h("td", { ...base, className: "cell time" }, ago(stu.lastActivity));
   }
 
@@ -257,7 +223,7 @@ export async function trackerView() {
         ),
       );
       cols.forEach((col, i) =>
-        tr.append(col.kind === "req" ? statusCell(info, stu, col, r, i + 1) : otherCell(stu, col, r, i + 1, info)),
+        tr.append(col.kind === "req" ? statusCell(info, stu, col, r, i + 1) : otherCell(stu, col, r, i + 1)),
       );
       tbody.append(tr);
     });
@@ -318,10 +284,6 @@ export async function trackerView() {
             `${ok} complete · ${review} still in review · ${bad} with none listed or needing changes`,
           ),
         );
-      } else if (col.kind === "done") {
-        tr.append(h("td", { className: "cell total" }, `${rows.filter((s) => s.complete).length} complete`));
-      } else if (col.kind === "missing") {
-        tr.append(h("td", { className: "cell total" }, `${rows.filter((s) => s.missing.length).length} with missing`));
       } else {
         tr.append(h("td", { className: "cell total" }));
       }

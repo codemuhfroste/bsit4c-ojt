@@ -2491,56 +2491,9 @@ table.sheet {
 .sheet .tabular {
   font-variant-numeric: tabular-nums;
 }
-.sheet .done-cell .tabular {
-  font-weight: 600;
-}
-.sheet .mini {
-  display: inline-block;
-  width: 64px;
-  height: 6px;
-  margin-left: 10px;
-  overflow: hidden;
-  vertical-align: middle;
-  background: var(--border);
-  border-radius: 99px;
-}
-.sheet .mini i {
-  display: block;
-  height: 100%;
-  background: var(--ok);
-}
-.sheet td.ok-cell {
-  color: var(--ok);
-}
-.sheet td.ok-cell svg.icon {
-  margin-right: 6px;
-}
-.sheet td.missing-cell {
-  max-width: 380px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--err);
-}
 .sheet td.time {
   color: var(--muted);
 }
-.sheet .badge-n {
-  display: inline-grid;
-  place-items: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 7px;
-  margin-right: 10px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #fff;
-  background: var(--err);
-  border-radius: 99px;
-}
-[data-theme="dark"] .sheet .badge-n {
-  color: #1c0b0d;
-}
-
 /* totals row */
 .sheet tfoot td {
   position: sticky;
