@@ -65,13 +65,17 @@ router.delete("/requirements/:id", requireRole("admin"), async (req, res) => {
 
 // ---- Students and review (adviser + admin) ----
 
+// Who the Tracker and its export list: the students, plus admins (the class coordinator is a student of the class too).
+// Advisers only review, so they are not in the grid.
+const CLASS_ROLES = "role IN ('student', 'admin')";
+
 // The monitoring grid: one row per student, one cell per requirement, and the companies each student listed.
 router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
   const { rows: reqs } = await db.execute(
     "SELECT id, title, phase, kind, available, optional FROM requirements ORDER BY sort_order, id",
   );
   const { rows: students } = await db.execute(
-    "SELECT id, full_name, student_id, email, email_verified_at, created_at FROM users WHERE role = 'student' ORDER BY full_name, email",
+    `SELECT id, full_name, student_id, email, email_verified_at, created_at FROM users WHERE ${CLASS_ROLES} ORDER BY full_name, email`,
   );
   const { rows: subs } = await db.execute("SELECT id, user_id, requirement_id, status, updated_at FROM submissions");
   const { rows: comps } = await db.execute(
@@ -269,7 +273,7 @@ router.get("/export/progress.csv", requireRole(...STAFF), async (_req, res) => {
   const { rows: reqs } = await db.execute(
     "SELECT id, title FROM requirements WHERE available = 1 AND optional = 0 ORDER BY sort_order, id",
   );
-  const { rows: students } = await db.execute("SELECT * FROM users WHERE role = 'student' ORDER BY full_name, email");
+  const { rows: students } = await db.execute(`SELECT * FROM users WHERE ${CLASS_ROLES} ORDER BY full_name, email`);
   const { rows: subs } = await db.execute("SELECT user_id, requirement_id, status FROM submissions");
   const { rows: comps } = await db.execute("SELECT user_id, name FROM companies ORDER BY id");
 

@@ -849,7 +849,7 @@ describe("current tasks", () => {
       "closed (N/A) requirements are listed too, flagged unavailable",
     );
     const by = Object.fromEntries(body.students.map((s) => [s.email, s]));
-    assert.ok(!("admin@example.com" in by), "only students appear as rows");
+    assert.ok("admin@example.com" in by, "admins are rows too (the coordinator is in the class)");
 
     const a = by["grid-done@example.com"];
     assert.equal(a.cells[COMPANIES].status, "approved");
