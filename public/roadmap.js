@@ -6,6 +6,17 @@ import { h, icon } from "/common.js";
 // The MoA template (the BU omnibus MoA). Step 2 shows a download button for it; leave this empty to show "Template coming soon".
 const MOA_TEMPLATE_URL = "/files/OMNIBUS-MOA-Template.pdf";
 
+// The deadline for submitting the reviewed MoA (step 3). Confirmed by the coordinator; edit here if it moves.
+const MOA_DEADLINE = new Date(2026, 9, 28); // 28 Oct 2026, local time
+const MOA_DEADLINE_LABEL = "Oct 28";
+
+function deadlineTag() {
+  const days = Math.ceil((MOA_DEADLINE - new Date().setHours(0, 0, 0, 0)) / 86400000);
+  if (days < 0) return `Deadline was ${MOA_DEADLINE_LABEL}. Ask your block president`;
+  if (days === 0) return `Deadline: today, ${MOA_DEADLINE_LABEL}`;
+  return `Deadline: ${MOA_DEADLINE_LABEL} · ${days} day${days === 1 ? "" : "s"} left`;
+}
+
 const isMoa = (item) => /^memorandum of agreement/i.test(item.title);
 
 // Step 2 (editing the MoA and sending it to the company for review) leaves no trace in the app, so the student ticks it
@@ -101,6 +112,7 @@ export function roadmap({ items, companies, userId, go, rerender }) {
     {
       title: "Submit the reviewed MoA",
       text: "When the company is happy with the edited MoA, upload it here. Your block president sends everyone's MoAs to the Dean's Office together.",
+      tag: p.three ? "" : deadlineTag(),
       detail: detail3,
       action: p.moa?.available && p.current === 3 && { label: "Upload my MoA", run: () => go(p.moa.id) },
     },
@@ -173,6 +185,10 @@ export function roadmap({ items, companies, userId, go, rerender }) {
 }
 
 const DATES = [
+  [
+    "Oct 28, 2026",
+    "Deadline to submit your reviewed MoA (step 3). Your block president takes everyone’s MoAs to the Dean’s Office together.",
+  ],
   [
     "Nov 30, 2026",
     "No company yet? Apply to a BU office (ICTO, an admin office or health services). No MoA is needed there.",
