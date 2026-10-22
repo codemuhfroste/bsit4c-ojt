@@ -45,6 +45,18 @@ The coordinator's first two tasks are open; every other requirement is shown cro
 2. **Resume / CV** – a PDF or image upload. It is **optional**: students can submit it, but it does not count toward
    their progress.
 
+### The student roadmap
+
+The top of a student's Checklist shows a four-step **OJT roadmap** with a "You are here" marker, so nobody has to guess
+what to do next: (1) send the letter of intent and wait for a company to accept, (2) edit the MoA template and send it
+to that company for review (not signing), (3) submit the reviewed MoA here, (4) prepare the other documents while the
+block finishes its MoAs. The marker follows the student's data: step 1 is done once a company is marked **Accepted**,
+step 3 once the "Memorandum of Agreement" task has a submission, and step 2 (which leaves no trace in the app) is ticked
+by the student with **I sent it for review** (remembered in their browser only). A side panel lists the key dates and
+reminders from the orientation. All of the wording lives in `public/roadmap.js`. Step 2 has a download button for the BU
+omnibus MoA template, which is stored at `public/files/OMNIBUS-MOA-Template.pdf` (replace that file to update it, or
+clear `MOA_TEMPLATE_URL` to show "Template coming soon" again).
+
 Admins can open or close any requirement (**Mark N/A** / **Open it** on the Requirements tab) as the coordinator
 releases the next tasks. Closed requirements cannot be submitted and are not counted in progress. The edit form also
 has an **Optional** checkbox for tasks that should not count toward progress.

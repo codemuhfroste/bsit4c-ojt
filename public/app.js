@@ -1,5 +1,6 @@
 import { api, avatar, fmtDate, fmtDay, h, icon, openDialog, parseDay, toast } from "/common.js";
 import { overviewView } from "/overview.js";
+import { guideAside, roadmap } from "/roadmap.js";
 import { trackerView } from "/tracker.js";
 
 const view = document.getElementById("view");
@@ -890,34 +891,6 @@ function activity(item) {
   return li;
 }
 
-function pathAside(phases) {
-  const aside = h("aside", { className: "card path", "aria-label": "Your path" }, h("h2", {}, "Your path"));
-  for (const phase of phases) {
-    aside.append(
-      h("p", { className: "phase-label" }, phase.name),
-      h(
-        "ul",
-        { className: "steps" },
-        ...phase.items.map((item) => {
-          const status = statusOf(item);
-          const glyph = { approved: "check", submitted: "clock", rejected: "x", todo: "check", na: "minus" }[status];
-          return h(
-            "li",
-            { className: `step${status === "na" ? " na" : ""}` },
-            h("span", { className: `node ${status}` }, icon(glyph, 11)),
-            h(
-              "button",
-              { type: "button", onclick: () => scrollToItem(item.id) },
-              item.optional ? `${item.title} · optional` : item.title,
-            ),
-          );
-        }),
-      ),
-    );
-  }
-  return aside;
-}
-
 async function checklistView() {
   const [{ items, progress }, mine] = await Promise.all([
     api("GET", "/api/requirements"),
@@ -928,8 +901,23 @@ async function checklistView() {
   const counted = items.filter((i) => !i.optional); // optional items do not count toward progress
   const countRequired = (s) => counted.filter((i) => statusOf(i) === s).length;
   const pct = progress.total ? Math.round((progress.approved / progress.total) * 100) : 0;
-  const next = counted.find((i) => ["todo", "rejected"].includes(statusOf(i)));
   const phases = groupByPhase(items);
+
+  // Jumps to a task, first clearing a filter that would be hiding it.
+  const go = async (id) => {
+    if (filter !== "all") {
+      filter = "all";
+      await render();
+    }
+    scrollToItem(id);
+  };
+  const { section: roadmapEl, current } = roadmap({
+    items,
+    companies: myCompanies,
+    userId: me.id,
+    go,
+    rerender: () => render(),
+  });
 
   const summary = h(
     "section",
@@ -955,13 +943,19 @@ async function checklistView() {
       ),
       items.some((i) => i.optional && i.available) &&
         h("p", { className: "nextup" }, "Tasks marked Optional do not count toward your progress."),
-      next &&
+      h(
+        "p",
+        { className: "nextup" },
+        `You are on step ${current.n} of 4: `,
         h(
-          "p",
-          { className: "nextup" },
-          "Next up: ",
-          h("button", { type: "button", onclick: () => scrollToItem(next.id) }, next.title),
+          "button",
+          {
+            type: "button",
+            onclick: () => document.getElementById("roadmap")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+          },
+          current.title,
         ),
+      ),
     ),
   );
 
@@ -1033,19 +1027,20 @@ async function checklistView() {
   return h(
     "div",
     {},
+    summary,
+    roadmapEl,
     h(
       "div",
-      { className: "checklist-layout" },
-      pathAside(phases),
+      { className: "student-layout" },
       h(
         "div",
         {},
-        summary,
         chips,
         ...(sections.length
           ? sections
           : [h("div", { className: "card" }, empty("Nothing here", "No requirements match this filter."))]),
       ),
+      guideAside(),
     ),
   );
 }
