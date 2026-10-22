@@ -63,6 +63,18 @@ const downloadLink = (file) =>
 // A short explanation shown on a task's card when students keep getting confused about it (null for any other task).
 const HELP = [
   [
+    /^memorandum of agreement/i,
+    {
+      title: "Applying in a group?",
+      points: [
+        [
+          "Only one of you submits the MoA.",
+          "If you are applying to the same company as a group, only one student from the group needs to submit the MoA, since it already covers everyone in the group. The others do not need to upload it.",
+        ],
+      ],
+    },
+  ],
+  [
     /^endorsement letter/i,
     {
       title: "When do I need this letter?",
@@ -194,7 +206,7 @@ export function roadmap({ items, companies, userId, go, rerender }) {
     },
     {
       title: "Submit the reviewed MoA",
-      text: "When the company is happy with the edited MoA, upload it here. Your block president sends everyone's MoAs to the Dean's Office together.",
+      text: "When the company is happy with the edited MoA, upload it here. Applying in a group? Only one of you needs to submit it, since it covers everyone in the group. Your block president sends everyone's MoAs to the Dean's Office together.",
       tag: p.three ? "" : deadlineTag(),
       detail: detail3,
       action: p.moa?.available && p.current === 3 && { label: "Upload my MoA", run: () => go(p.moa.id) },
