@@ -92,6 +92,15 @@ has an **Optional** checkbox for tasks that should not count toward progress.
   double-click opens the student. It refreshes itself every minute.
 - **Overview tab** (advisers) – class totals, the students who have no company yet, and how far the company hunt
   has got (accepted by a company, applied and waiting, listed, nothing listed).
+- **Groups and the MoA** – students who apply to the same company as a group only need one MoA between them. Two
+  students count as groupmates when their **final companies** (accepted ones only) have the same name word for word, or
+  one word different (`src/company-names.js`: case, punctuation and "Inc." are ignored, one typo or plural is fine, one
+  extra word is fine, and one different word is fine only in names of four words or more; the first word, the
+  company's name, must always match). When one of them submits the MoA the others show it as **Submitted by groupmate**
+  (or **Approved via groupmate** once the adviser approves it) and it counts in their progress, but it never appears in
+  the review queue or the "awaiting review" counts. A student's own submission always wins, and staff see whose MoA it
+  is on the student's page and in the Tracker. The match is a guess from the names, so check the Tracker if two
+  different companies look alike.
 - **MoA with BU** – advisers (not students) can flag a company as having a Memorandum of Agreement with the
   university by double-clicking its **MoA** tag. Students see the **MoA with BU** tag on that company.
 - **Exports** – on the Students tab, **Progress CSV** (one row per student, a status column for each open

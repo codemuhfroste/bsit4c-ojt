@@ -47,6 +47,14 @@ function prettyLink(href) {
 let myCompanies = [];
 const pill = (status, small = true) =>
   h("span", { className: `pill ${status}` }, icon(STATUS[status].icon, small ? 13 : 15), STATUS[status].label);
+// A task covered by a groupmate's submission (same final company, or nearly): not the student's own file.
+const groupPill = (status, small = true) =>
+  h(
+    "span",
+    { className: `pill ${status}` },
+    icon("users", small ? 13 : 15),
+    status === "approved" ? "Approved via groupmate" : "Submitted by groupmate",
+  );
 const sizeText = (n) =>
   n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 
@@ -835,6 +843,18 @@ function activity(item) {
         ? null
         : pill(status, false);
     put(side, state, add);
+  } else if (sub?.viaGroup) {
+    // The MoA of a groupmate covers this student; they can still submit their own, which then takes over.
+    put(
+      side,
+      groupPill(status, false),
+      item.requiresFile &&
+        h(
+          "div",
+          { className: "act-links" },
+          h("button", { type: "button", className: "btn link", onclick: togglePanel }, "Submit my own"),
+        ),
+    );
   } else if (locked) {
     put(side, h("span", { className: "btn ok sm done-btn", style: "pointer-events:none" }, icon("check", 15), "Done"));
   } else if (status === "submitted") {
@@ -883,6 +903,13 @@ function activity(item) {
       item.description && h("p", { className: "desc" }, item.description),
       taskHelp(item),
       templateLinks(item),
+      sub?.viaGroup &&
+        h(
+          "p",
+          { className: "group-note" },
+          icon("users", 14),
+          "A groupmate who applied to the same company already submitted the MoA, and it covers you too. You do not need to upload it.",
+        ),
       metaEl,
       listBlock,
       sub?.note && h("div", { className: `callout ${status}` }, h("b", {}, "Reviewer: "), sub.note),
@@ -1736,8 +1763,9 @@ async function studentDetailView(id) {
         h(
           "div",
           { className: "meta" },
-          pill(status),
+          sub?.viaGroup ? groupPill(status) : pill(status),
           item.optional && h("span", { className: "pill todo" }, "Optional"),
+          sub?.viaGroup && h("span", { className: "muted" }, `Covered by ${sub.groupmate}'s MoA`),
           sub?.fileName && h("a", { href: `/api/submissions/${sub.id}/file` }, icon("download", 14), sub.fileName),
           sub && status !== "na" && h("span", { className: "muted" }, `Updated ${fmtDate(sub.updatedAt)}`),
         ),
@@ -1751,7 +1779,7 @@ async function studentDetailView(id) {
       h(
         "div",
         { className: "act-side" },
-        sub && status !== "na" && !isCompanies ? reviewControls(sub.id, sub.note) : null,
+        sub && status !== "na" && !isCompanies && !sub.viaGroup ? reviewControls(sub.id, sub.note) : null,
       ),
     );
   });

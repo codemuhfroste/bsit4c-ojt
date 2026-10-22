@@ -32,7 +32,8 @@ export async function overviewView(me) {
 
   const documents = data.requirements.filter((r) => r.available && !r.optional && r.kind !== "companies");
   const docsWaiting = students.reduce(
-    (n, s) => n + documents.filter((r) => s.cells[r.id]?.status === "submitted").length,
+    // a groupmate's MoA is not something to review
+    (n, s) => n + documents.filter((r) => s.cells[r.id]?.status === "submitted" && !s.cells[r.id]?.viaGroup).length,
     0,
   );
   const count = (stage) => students.filter((s) => s.stage === stage).length;

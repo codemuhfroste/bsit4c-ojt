@@ -186,6 +186,10 @@ export async function trackerView() {
   function statusCell(info, stu, col, r, c) {
     const status = info.statusFor(stu, col.req);
     const who = stu.fullName || stu.email;
+    // a groupmate's MoA covers this student: say so, and whose it is
+    const via = stu.cells[col.req.id]?.viaGroup ? stu.cells[col.req.id] : null;
+    const label = via ? (status === "approved" ? "Approved via groupmate" : "Submitted by groupmate") : LABEL[status];
+    const detail = via ? `${label} (${via.groupmate})` : LABEL[status];
     return h(
       "td",
       {
@@ -193,10 +197,10 @@ export async function trackerView() {
         tabindex: "-1",
         "data-r": r,
         "data-c": c,
-        title: `${who} · ${col.title}: ${LABEL[status]}`,
-        "aria-label": `${who}, ${col.title}: ${LABEL[status]}`,
+        title: `${who} · ${col.title}: ${detail}`,
+        "aria-label": `${who}, ${col.title}: ${detail}`,
       },
-      h("span", { className: `badge ${status}` }, icon(GLYPH[status], 13), LABEL[status]),
+      h("span", { className: `badge ${status}` }, icon(via ? "users" : GLYPH[status], 13), label),
     );
   }
 

@@ -160,8 +160,9 @@ export function roadmap({ items, companies, userId, go, rerender }) {
           : companies.length
             ? "Tick “I already applied here” on a company once its letter is sent."
             : "Start by adding the companies you will send letters to.";
-  const detail3 =
-    p.moaStatus === "approved"
+  const detail3 = p.moa?.submission?.viaGroup
+    ? "A groupmate already submitted the MoA for your group."
+    : p.moaStatus === "approved"
       ? "Approved by your adviser."
       : p.moaStatus === "submitted"
         ? "Submitted. Waiting for your adviser."

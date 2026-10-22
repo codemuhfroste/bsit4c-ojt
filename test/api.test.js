@@ -536,6 +536,75 @@ describe("current tasks", () => {
     assert.deepEqual(await finals(), [false, false, false]);
   });
 
+  test("a groupmate's MoA covers students whose final company is (nearly) the same", async () => {
+    const admin = await adminClient();
+    const mk = async (email, company, response = "accepted") => {
+      const c = await registerAndVerify(email);
+      await c("POST", "/api/companies", {
+        json: { name: company, link: "", email: "N/A", location: "inside", applied: true, response },
+      });
+      return c;
+    };
+    const first = await mk("group-a@example.com", "Quanby Solutions, Inc.");
+    const second = await mk("group-b@example.com", "Quanby Solutions");
+    const other = await mk("group-c@example.com", "Quanby Labs"); // a different company
+    const waiting = await mk("group-d@example.com", "Quanby Solutions", "none"); // has not accepted: no final company
+    const moaOf = async (c) =>
+      (await c("GET", "/api/requirements")).body.items.find((i) => /^Memorandum/.test(i.title));
+    const moaId = (await moaOf(first)).id;
+
+    assert.equal((await moaOf(second)).submission, null); // nobody has submitted yet
+    assert.equal((await first("POST", `/api/requirements/${moaId}/submit`, { form: upload(pdf("moa")) })).status, 200);
+
+    // The groupmate is covered, as "submitted", and it counts in their progress.
+    const covered = await moaOf(second);
+    assert.equal(covered.submission.viaGroup, true);
+    assert.equal(covered.submission.status, "submitted");
+    assert.equal(covered.submission.groupmate, undefined); // students are not told whose it is
+    assert.equal((await second("GET", "/api/requirements")).body.progress.submitted, 2); // company list + MoA
+    // Nobody else is.
+    assert.equal((await moaOf(other)).submission, null);
+    assert.equal((await moaOf(waiting)).submission, null);
+
+    // Staff see whose MoA it is, and cannot review something that is not the student's own.
+    const secondId = (await second("GET", "/api/me")).body.user.id;
+    const detail = (await admin("GET", `/api/admin/users/${secondId}`)).body.items.find((i) => i.id === moaId);
+    assert.deepEqual(
+      [detail.submission.viaGroup, detail.submission.groupmate, detail.submission.id],
+      [true, "Test User", null],
+    );
+    const tracker = (await admin("GET", "/api/admin/tracker")).body.students;
+    const cell = tracker.find((x) => x.email === "group-b@example.com").cells[moaId];
+    assert.deepEqual([cell.status, cell.viaGroup, cell.groupmate], ["submitted", true, "Test User"]);
+    assert.equal(tracker.find((x) => x.email === "group-c@example.com").cells[moaId], undefined);
+    // ...and it is not something waiting in the review queue or the "awaiting review" count.
+    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    assert.equal(queue.filter((x) => x.requirement === covered.title).length >= 1, true);
+    assert.equal(
+      queue.some((x) => x.email === "group-b@example.com"),
+      false,
+    );
+    const listed = (await admin("GET", "/api/admin/users")).body.users.find((u) => u.email === "group-b@example.com");
+    assert.deepEqual([listed.submitted, listed.inReview], [2, 0]);
+    const csv = Buffer.from((await admin("GET", "/api/admin/export/progress.csv")).body).toString("utf8");
+    assert.match(
+      csv.split("\r\n").find((l) => l.includes("group-b@example.com")),
+      /Submitted by groupmate/,
+    );
+
+    // Once the adviser approves the groupmate's MoA, the cover follows.
+    const mine = (await moaOf(first)).submission.id;
+    await admin("POST", `/api/admin/submissions/${mine}/review`, { json: { status: "approved" } });
+    assert.equal((await moaOf(second)).submission.status, "approved");
+    assert.equal((await second("GET", "/api/requirements")).body.progress.approved, 2);
+
+    // A student's own submission always wins.
+    assert.equal((await second("POST", `/api/requirements/${moaId}/submit`, { form: upload(pdf("own")) })).status, 200);
+    const own = (await moaOf(second)).submission;
+    assert.equal(own.viaGroup, undefined);
+    assert.equal(own.status, "submitted");
+  });
+
   test("company website is optional", async () => {
     const student = await registerAndVerify("nolink@example.com");
     const post = (body) => student("POST", "/api/companies", { json: { email: "N/A", location: "inside", ...body } });

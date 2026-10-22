@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../db.js";
 import { HttpError, ROLES, STAFF, endAllSessions, requireRole } from "../auth.js";
+import { moaViaGroup } from "../groups.js";
 import { publicUser } from "../auth.js";
 import { eraseUser } from "../accounts.js";
 import { parseDate, parseId, parseText } from "../validate.js";
@@ -93,6 +94,7 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
   };
   const subsBy = group(subs);
   const compBy = group(comps);
+  const { moaId, byUser: viaGroup } = await moaViaGroup(); // students covered by a groupmate's MoA
 
   res.json({
     requirements: reqs.map((r) => ({
@@ -107,12 +109,17 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
       const mine = subsBy.get(Number(u.id)) ?? [];
       const list = compBy.get(Number(u.id)) ?? [];
       const stamps = [u.created_at, ...list.map((c) => c.created_at), ...mine.map((x) => x.updated_at)].filter(Boolean);
+      const via = viaGroup.get(Number(u.id));
       return {
         id: Number(u.id),
         fullName: u.full_name,
         studentId: u.student_id,
         email: u.email,
-        cells: Object.fromEntries(mine.map((x) => [Number(x.requirement_id), { status: x.status, id: Number(x.id) }])),
+        cells: {
+          ...Object.fromEntries(mine.map((x) => [Number(x.requirement_id), { status: x.status, id: Number(x.id) }])),
+          // a groupmate's MoA covers this student: shown as submitted, but there is nothing of their own to review
+          ...(via && { [moaId]: { status: via.status, id: null, viaGroup: true, groupmate: via.name } }),
+        },
         // The exact names, in the order the student added them (this is what the grid and its CSV show).
         companyList: list.map((c) => ({
           name: c.name,
@@ -150,18 +157,33 @@ router.get("/users", requireRole(...STAFF), async (_req, res) => {
       WHERE r.available = 1 AND r.optional = 0
     ) s ON s.user_id = u.id
     GROUP BY u.id ORDER BY u.full_name, u.email`);
+  // A groupmate's MoA counts as submitted (and approved once theirs is), but never as waiting for review.
+  const { moaId, byUser: viaGroup } = await moaViaGroup();
+  const moaCounts = moaId
+    ? Boolean(
+        (
+          await db.execute({
+            sql: "SELECT 1 FROM requirements WHERE id = ? AND available = 1 AND optional = 0",
+            args: [moaId],
+          })
+        ).rows[0],
+      )
+    : false;
   res.json({
     totalRequirements: total,
-    users: rows.map((u) => ({
-      id: Number(u.id),
-      email: u.email,
-      role: u.role,
-      fullName: u.full_name,
-      studentId: u.student_id,
-      submitted: Number(u.submitted),
-      approved: Number(u.approved),
-      inReview: Number(u.in_review),
-    })),
+    users: rows.map((u) => {
+      const via = moaCounts ? viaGroup.get(Number(u.id)) : null;
+      return {
+        id: Number(u.id),
+        email: u.email,
+        role: u.role,
+        fullName: u.full_name,
+        studentId: u.student_id,
+        submitted: Number(u.submitted) + (via ? 1 : 0),
+        approved: Number(u.approved) + (via?.status === "approved" ? 1 : 0),
+        inReview: Number(u.in_review),
+      };
+    }),
   });
 });
 
@@ -239,7 +261,11 @@ router.get("/users/:id", requireRole(...STAFF), async (req, res) => {
     sql: "SELECT * FROM companies WHERE user_id = ? ORDER BY id",
     args: [id],
   });
-  res.json({ user: publicUser(rows[0]), ...(await loadChecklist(id)), companies: companies.map(shapeCompany) });
+  res.json({
+    user: publicUser(rows[0]),
+    ...(await loadChecklist(id, { staff: true })),
+    companies: companies.map(shapeCompany),
+  });
 });
 
 // ---- CSV exports for the coordinator (adviser + admin) ----
@@ -273,6 +299,13 @@ router.get("/export/progress.csv", requireRole(...STAFF), async (_req, res) => {
   const { rows: comps } = await db.execute("SELECT user_id, name FROM companies ORDER BY id");
 
   const status = new Map(subs.map((s) => [`${s.user_id}:${s.requirement_id}`, s.status]));
+  // students covered by a groupmate's MoA get its status, with a label that says so
+  const { moaId, byUser: viaGroup } = await moaViaGroup();
+  const viaLabel = new Map();
+  for (const [userId, via] of viaGroup) {
+    status.set(`${userId}:${moaId}`, via.status);
+    viaLabel.set(`${userId}:${moaId}`, via.status === "approved" ? "Approved (groupmate)" : "Submitted by groupmate");
+  }
   const namesBy = new Map();
   for (const c of comps) {
     const key = Number(c.user_id);
@@ -297,7 +330,7 @@ router.get("/export/progress.csv", requireRole(...STAFF), async (_req, res) => {
       u.full_name,
       u.student_id,
       u.email,
-      ...reqs.map((r) => STATUS_LABEL[status.get(`${u.id}:${r.id}`)] ?? "To do"),
+      ...reqs.map((r) => viaLabel.get(`${u.id}:${r.id}`) ?? STATUS_LABEL[status.get(`${u.id}:${r.id}`)] ?? "To do"),
       `${approved}/${reqs.length}`,
       ...Array.from({ length: slots }, (_, i) => names[i] ?? ""),
     ]);

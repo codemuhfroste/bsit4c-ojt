@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "../db.js";
 import { HttpError, STAFF, requireAuth } from "../auth.js";
+import { groupSubmission, moaViaGroup } from "../groups.js";
 import { hasExpectedSignature, upload } from "../uploads.js";
 import { parseEmail, parseId, parseLink, parseText } from "../validate.js";
 
@@ -30,7 +31,7 @@ export const shapeRequirement = (r) => ({
 });
 
 // A student's checklist. Progress counts only requirements that are open and not optional.
-export async function loadChecklist(userId) {
+export async function loadChecklist(userId, { staff = false } = {}) {
   const { rows } = await db.execute({
     sql: `SELECT r.*, s.id AS sub_id, s.status, s.note, s.file_name, s.updated_at AS sub_updated_at
           FROM requirements r
@@ -39,6 +40,11 @@ export async function loadChecklist(userId) {
     args: [userId],
   });
   const items = rows.map(shapeRequirement);
+  // The MoA of a groupmate (same final company, or nearly) counts for this student too, labelled as such.
+  const { moaId, byUser } = await moaViaGroup();
+  const via = byUser.get(Number(userId));
+  const moa = via && items.find((i) => i.id === moaId);
+  if (moa && !moa.submission) moa.submission = groupSubmission(via, { withName: staff });
   const counted = items.filter((i) => i.available && !i.optional);
   return {
     items,

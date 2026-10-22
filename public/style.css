@@ -2776,6 +2776,21 @@ table.sheet {
   text-decoration: line-through;
   color: var(--muted);
 }
+.group-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: var(--primary-ink);
+  background: var(--primary-soft);
+  border-radius: 10px;
+}
+.group-note svg {
+  margin-top: 3px;
+}
 .task-help {
   display: grid;
   gap: 6px;
