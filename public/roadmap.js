@@ -8,6 +8,7 @@ import { h, icon } from "/common.js";
 const FILES = {
   moaWord: { label: "MoA template (Word)", href: "/files/OMNIBUS-MOA-Template.docx" },
   moaPdf: { label: "MoA template (PDF)", href: "/files/OMNIBUS-MOA-Template.pdf" },
+  endorsement: { label: "Endorsement Letter (Word)", href: "/files/Endorsement-Letter.docx" },
 };
 
 // The template for each task that has one, found by the task's title. In the Word files every value that belongs to a
@@ -20,7 +21,7 @@ const TEMPLATES = [
     /^training agreement/i,
     [{ label: "Training Agreement and Waiver (Word)", href: "/files/Training-Agreement-and-Waiver.docx" }],
   ],
-  [/^endorsement letter/i, [{ label: "Endorsement Letter (Word)", href: "/files/Endorsement-Letter.docx" }]],
+  [/^endorsement letter/i, [FILES.endorsement]],
 ];
 
 // The deadline for submitting the reviewed MoA (step 3). Confirmed by the coordinator; edit here if it moves.
@@ -58,6 +59,42 @@ const writeFlag = (userId, on) => {
 // A download rather than a link that opens: the site's security header blocks the browser's built-in PDF viewer.
 const downloadLink = (file) =>
   h("a", { className: "btn outline sm", href: file.href, download: "" }, icon("download", 15), file.label);
+
+// A short explanation shown on a task's card when students keep getting confused about it (null for any other task).
+const HELP = [
+  [
+    /^endorsement letter/i,
+    {
+      title: "When do I need this letter?",
+      points: [
+        [
+          "Before you apply.",
+          "Some companies ask for an endorsement letter first, so they can accept you. If yours does, get this letter first.",
+        ],
+        [
+          "After you are accepted.",
+          "If a company accepted you with only your letter of request, submit this letter together with your other documents.",
+        ],
+        [
+          "Either way,",
+          "download the template, fill in the yellow parts, get it signed (the OJT coordinator signs it and the Dean approves it) and upload it here. You only submit it once.",
+        ],
+      ],
+    },
+  ],
+];
+
+export function taskHelp(item) {
+  const hit = HELP.find(([title]) => title.test(item.title));
+  if (!hit) return null;
+  const { title, points } = hit[1];
+  return h(
+    "div",
+    { className: "task-help" },
+    h("b", {}, title),
+    h("ul", {}, ...points.map(([lead, rest]) => h("li", {}, h("strong", {}, lead), " ", rest))),
+  );
+}
 
 // The template buttons shown on a task's card in the checklist (null for a task without a template).
 export function templateLinks(item) {
@@ -119,7 +156,8 @@ export function roadmap({ items, companies, userId, go, rerender }) {
   const steps = [
     {
       title: "Send your letter of intent",
-      text: "Send a letter of intent (also called a letter of request or inquiry) and your resume to the companies you want. The signatory from the department head is optional for the letter of inquiry. Then wait for a company to accept you.",
+      text: "Send a letter of intent (also called a letter of request or inquiry) and your resume to the companies you want. The signatory from the department head is optional for the letter of inquiry. Some companies ask for an endorsement letter before you apply, so they can accept you: if yours does, get it first (the template is below). Then wait for a company to accept you.",
+      links: [FILES.endorsement],
       detail: detail1,
       action: p.companyTask && {
         label: p.needsChoice ? "Choose final company" : companies.length ? "Open my companies" : "Add a company",
@@ -159,7 +197,7 @@ export function roadmap({ items, companies, userId, go, rerender }) {
     },
     {
       title: "Prepare your other documents",
-      text: "Once a company accepts you, and while the rest of the block finishes their MoAs, accomplish the other forms listed under Before OJT. Each one has a Word template to download: fill in the yellow parts, get it signed and upload it.",
+      text: "Once a company accepts you, and while the rest of the block finishes their MoAs, accomplish the other forms listed under Before OJT, including the endorsement letter if you did not need it before applying. Each one has a Word template to download: fill in the yellow parts, get it signed and upload it.",
       detail: "",
       action: p.formsTask && { label: "Open the forms", run: () => go(p.formsTask.id) },
     },

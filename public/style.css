@@ -2776,6 +2776,25 @@ table.sheet {
   text-decoration: line-through;
   color: var(--muted);
 }
+.task-help {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  background: var(--primary-soft);
+  border-radius: 12px;
+}
+.task-help b {
+  color: var(--primary-ink);
+}
+.task-help ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
 .act-downloads {
   display: flex;
   flex-wrap: wrap;

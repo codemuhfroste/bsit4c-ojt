@@ -229,4 +229,15 @@ export const migrations = [
       args: [order, title],
     })),
   ],
+
+  // 15: the endorsement letter is required for everyone. It is either needed before applying (some companies ask for it
+  // so that they can accept you) or submitted with the other documents once a company accepts you.
+  [
+    {
+      sql: "UPDATE requirements SET optional = 0, available = 1, description = ? WHERE title = 'Endorsement letter'",
+      args: [
+        "The college's letter endorsing you to a company. Read below when you need it, then download the template, fill it in, get it signed and upload it here.",
+      ],
+    },
+  ],
 ];

@@ -1,6 +1,6 @@
 import { api, avatar, fmtDate, fmtDay, h, icon, openDialog, parseDay, toast } from "/common.js";
 import { overviewView } from "/overview.js";
-import { guideAside, roadmap, templateLinks } from "/roadmap.js";
+import { guideAside, roadmap, taskHelp, templateLinks } from "/roadmap.js";
 import { trackerView } from "/tracker.js";
 
 const view = document.getElementById("view");
@@ -881,6 +881,7 @@ function activity(item) {
       { className: "act-body" },
       h("h3", {}, item.title),
       item.description && h("p", { className: "desc" }, item.description),
+      taskHelp(item),
       templateLinks(item),
       metaEl,
       listBlock,

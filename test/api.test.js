@@ -266,11 +266,11 @@ describe("checklist", () => {
         "Endorsement letter",
       ],
     );
-    // The resume and the endorsement letter are optional: open and submittable, but not counted in progress.
-    assert.equal(body.progress.total, 5);
+    // The resume is optional: open and submittable, but not counted in progress. The endorsement letter is required.
+    assert.equal(body.progress.total, 6);
     assert.deepEqual(
       body.items.filter((i) => i.optional).map((i) => i.title),
-      ["Resume / CV", "Endorsement letter"],
+      ["Resume / CV"],
     );
     assert.equal(body.progress.approved, 0);
   });
@@ -346,7 +346,7 @@ describe("checklist", () => {
 
     const users = await admin("GET", "/api/admin/users");
     // An approved optional requirement does not count toward the student's progress.
-    assert.equal(users.body.totalRequirements, 5);
+    assert.equal(users.body.totalRequirements, 6);
     assert.equal(users.body.users.find((u) => u.email === "student@example.com").approved, 0);
   });
 
@@ -664,7 +664,7 @@ describe("current tasks", () => {
     const byTitle = Object.fromEntries(body.items.map((i) => [i.title, i]));
     assert.equal(byTitle["Resume / CV"].submission.status, "submitted");
     assert.equal(byTitle["Find OJT companies"].submission.status, "approved");
-    assert.equal(body.progress.total, 5);
+    assert.equal(body.progress.total, 6);
 
     // Reviews list the student id so the adviser can jump to the student.
     const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
@@ -693,14 +693,14 @@ describe("current tasks", () => {
     const progress = await text("/api/admin/export/progress.csv");
     assert.ok(
       progress.startsWith(
-        "\uFEFFName,Student ID,Email,Find OJT companies,Memorandum of Agreement (MOA),Letter of Acceptance,Mentorship Plan,Training Agreement and Waiver,Required approved,Company 1",
+        "\uFEFFName,Student ID,Email,Find OJT companies,Memorandum of Agreement (MOA),Letter of Acceptance,Mentorship Plan,Training Agreement and Waiver,Endorsement letter,Required approved,Company 1",
       ),
       progress.split("\r\n")[0],
     );
     assert.ok(!progress.split("\r\n")[0].includes("Resume"), "optional tasks are not in the export");
     const row = progress.split("\r\n").find((l) => l.includes("csv@example.com"));
     assert.match(row, /^"'=HYPERLINK/); // formula neutralised (and quoted, since it contains quotes)
-    assert.match(row, /,Approved,To do,To do,To do,To do,1\/5,"Acme, ""The"" Co"/); // status, progress, then the exact company name
+    assert.match(row, /,Approved,To do,To do,To do,To do,To do,1\/6,"Acme, ""The"" Co"/); // status, progress, then the exact company name
 
     const companies = await text("/api/admin/export/companies.csv");
     const line = companies.split("\r\n").find((l) => l.includes("csv@example.com"));
@@ -712,12 +712,12 @@ describe("current tasks", () => {
   test("listing a company completes the required progress without any adviser review", async () => {
     const student = await registerAndVerify("progress@example.com");
     const before = (await student("GET", "/api/requirements")).body.progress;
-    assert.deepEqual([before.approved, before.total], [0, 5]);
+    assert.deepEqual([before.approved, before.total], [0, 6]);
     await student("POST", "/api/companies", {
       json: { name: "Prog Co", link: "prog.example.com", email: "N/A", location: "inside" },
     });
     const after = (await student("GET", "/api/requirements")).body.progress;
-    assert.deepEqual([after.approved, after.total], [1, 5]);
+    assert.deepEqual([after.approved, after.total], [1, 6]);
   });
 
   test("advisers flag a MoA on a company; students cannot, and there is no per-company review", async () => {
@@ -865,7 +865,7 @@ describe("current tasks", () => {
         ["Letter of Acceptance", false],
         ["Mentorship Plan", false],
         ["Training Agreement and Waiver", false],
-        ["Endorsement letter", true],
+        ["Endorsement letter", false],
       ],
     );
     assert.ok(

@@ -60,7 +60,7 @@ step 3 once the "Memorandum of Agreement" task has a submission, and step 2 (whi
 by the student with **I sent it for review** (remembered in their browser only). A side panel lists the key dates and
 reminders from the orientation. All of the wording lives in `public/roadmap.js`. Downloads sit with the section they
 belong to, each on the task that needs it: the **Before OJT** checklist section lists the Memorandum of Agreement first,
-then the Letter of Acceptance, Mentorship Plan, Training Agreement and Waiver and the (optional) Endorsement letter, and
+then the Letter of Acceptance, Mentorship Plan, Training Agreement and Waiver and the Endorsement letter (which is either needed before applying, because some companies ask for it so they can accept you, or submitted with the other forms once a company has accepted you), and
 every one has its Word template to download (the MoA also as PDF, and roadmap step 2 repeats the MoA buttons). They live
 in `public/files/` and are matched to a task by its title in `public/roadmap.js`; in the Word files every value that
 belongs to a student, a company or a date is blank and highlighted in yellow so students can see what to fill in.
