@@ -79,7 +79,7 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
   );
   const { rows: subs } = await db.execute("SELECT id, user_id, requirement_id, status, updated_at FROM submissions");
   const { rows: comps } = await db.execute(
-    "SELECT user_id, name, location, applied, response, moa, review, created_at FROM companies ORDER BY id",
+    "SELECT user_id, name, location, applied, response, moa, created_at FROM companies ORDER BY id",
   );
 
   const group = (rows) => {
@@ -120,14 +120,11 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
           applied: Boolean(c.applied),
           response: c.response,
           moa: Boolean(c.moa),
-          review: c.review,
         })),
         companies: {
           total: list.length,
           applied: list.filter((c) => c.applied).length,
           accepted: list.filter((c) => c.response === "accepted").length,
-          approved: list.filter((c) => c.review === "approved").length,
-          rejected: list.filter((c) => c.review === "rejected").length,
           moa: list.filter((c) => c.moa).length,
           inside: list.filter((c) => c.location === "inside").length,
         },
@@ -194,7 +191,7 @@ router.get("/submissions", requireRole(...STAFF), async (req, res) => {
   const byUser = new Map();
   if (companyOwners.length) {
     const { rows: list } = await db.execute({
-      sql: `SELECT user_id, id, name, link, email, location, applied, response, moa, review, review_note FROM companies
+      sql: `SELECT user_id, id, name, link, email, location, applied, response, moa FROM companies
             WHERE user_id IN (${companyOwners.map(() => "?").join(",")}) ORDER BY id`,
       args: companyOwners,
     });
@@ -209,8 +206,6 @@ router.get("/submissions", requireRole(...STAFF), async (req, res) => {
         applied: Boolean(c.applied),
         response: c.response,
         moa: Boolean(c.moa),
-        review: c.review,
-        reviewNote: c.review_note,
       };
       byUser.set(key, [...(byUser.get(key) ?? []), entry]);
     }
@@ -326,8 +321,6 @@ router.get("/export/companies.csv", requireRole(...STAFF), async (_req, res) => 
       "Applied",
       "Response",
       "MoA with BU",
-      "Review",
-      "Review note",
       "Added",
     ],
     ...rows.map((c) => [
@@ -341,8 +334,6 @@ router.get("/export/companies.csv", requireRole(...STAFF), async (_req, res) => 
       c.applied ? "Yes" : "No",
       c.applied ? { none: "No response", accepted: "Accepted", denied: "Denied" }[c.response] : "",
       c.moa ? "Yes" : "No",
-      { pending: "Not reviewed", approved: "Approved", rejected: "Rejected" }[c.review],
-      c.review_note,
       c.created_at,
     ]),
   ];
@@ -350,24 +341,6 @@ router.get("/export/companies.csv", requireRole(...STAFF), async (_req, res) => 
 });
 
 // ---- Companies (adviser + admin) ----
-
-// Approve or reject one company a student listed ("pending" clears an earlier decision).
-router.post("/companies/:id/review", requireRole(...STAFF), async (req, res) => {
-  const id = parseId(req.params.id);
-  const status = req.body?.status;
-  if (!["approved", "rejected", "pending"].includes(status)) {
-    throw new HttpError(400, "Status must be approved, rejected or pending.");
-  }
-  const note = status === "pending" ? "" : parseText(req.body?.note, "Note", 300);
-  if (status === "rejected" && !note) throw new HttpError(400, "Tell the student why it was rejected.");
-
-  const result = await db.execute({
-    sql: `UPDATE companies SET review = ?, review_note = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?`,
-    args: [status, note, req.user.id, id],
-  });
-  if (!result.rowsAffected) throw new HttpError(404, "Company not found.");
-  res.json({ ok: true });
-});
 
 // Staff-only: whether the university has a Memorandum of Agreement with this company.
 router.patch("/companies/:id", requireRole(...STAFF), async (req, res) => {

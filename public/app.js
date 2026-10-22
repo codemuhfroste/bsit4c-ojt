@@ -285,12 +285,8 @@ function companyTags(c, patch, staff = false) {
     const next = RESPONSE_ORDER[(RESPONSE_ORDER.indexOf(c.response) + 1) % RESPONSE_ORDER.length];
     tags.push(tag(r.label, r.icon, r.cls, patch && ((el) => patch({ response: next }, el)), "Response"));
   }
-  if (!staff) {
-    // Set by advisers: whether the university has a MoA with this company, and the review result.
-    if (c.moa) tags.push(tag("MoA with BU", "shield", "approved"));
-    if (c.review === "approved") tags.push(tag("Approved", "check", "approved"));
-    else if (c.review === "rejected") tags.push(tag("Rejected", "x", "rejected"));
-  }
+  // Set by advisers: whether the university has a MoA with this company.
+  if (!staff && c.moa) tags.push(tag("MoA with BU", "shield", "approved"));
   return h("div", { className: "tags" }, ...tags);
 }
 
@@ -311,17 +307,13 @@ function buildCompanyRow(c, { patch, actions = [], staff = false }) {
     ),
     companyTags(c, patch, staff),
     ...actions,
-    !staff &&
-      c.reviewNote &&
-      c.review !== "pending" &&
-      h("div", { className: `callout ${c.review} company-note` }, h("b", {}, "Reviewer: "), c.reviewNote),
   );
 }
 
 const companyRow = (c, patch, ...actions) => buildCompanyRow(c, { patch, actions });
 
-// A company as an adviser sees it: Approve / Reject with a note, and a double-click MoA tag. Changes show
-// immediately and are undone with a message if the server refuses them.
+// A company as an adviser sees it, with a double-click MoA tag. The change shows immediately and is undone with a
+// message if the server refuses it.
 function staffCompanyRow(initial) {
   let c = initial;
   let li;
@@ -354,54 +346,11 @@ function staffCompanyRow(initial) {
     return change({ moa }, () => api("PATCH", `/api/admin/companies/${c.id}`, { moa }));
   };
 
-  const decide = (status, noteText) => {
-    const note = noteText.trim();
-    if (status === "rejected" && !note) return toast("Tell the student why it was rejected.", "err");
-    return change(
-      { review: status, reviewNote: note },
-      () => api("POST", `/api/admin/companies/${c.id}/review`, { status, note }),
-      status === "approved" ? `${c.name} approved.` : `${c.name} sent back.`,
-    );
-  };
-
   function build() {
     const row = buildCompanyRow(c, { staff: true });
-    const state =
-      c.review === "approved"
-        ? h("span", { className: "pill approved" }, icon("check", 12), "Approved")
-        : c.review === "rejected"
-          ? h("span", { className: "pill rejected" }, icon("x", 12), "Rejected")
-          : h("span", { className: "pill na" }, "Not reviewed");
     const moa = tag(c.moa ? "MoA with BU" : "No MoA", "shield", c.moa ? "approved" : "na", setMoa, "MoA with BU");
     moa.classList.add("moa-tag");
-    row.querySelector(".tags").append(moa, state);
-
-    const note = h("input", {
-      type: "text",
-      maxLength: 300,
-      placeholder: "Note (required to reject)",
-      "aria-label": `Note for ${c.name}`,
-      value: c.reviewNote,
-    });
-    row.append(
-      h(
-        "div",
-        { className: "review-line" },
-        note,
-        h(
-          "button",
-          { type: "button", className: "btn ok sm", onclick: () => decide("approved", note.value) },
-          icon("check", 14),
-          "Approve",
-        ),
-        h(
-          "button",
-          { type: "button", className: "btn danger sm", onclick: () => decide("rejected", note.value) },
-          icon("x", 14),
-          "Reject",
-        ),
-      ),
-    );
+    row.querySelector(".tags").append(moa);
     return row;
   }
 
@@ -1569,7 +1518,8 @@ async function reviewView() {
         s.kind === "companies" &&
           h("ul", { className: "company-list" }, ...(s.companies ?? []).map((c) => staffCompanyRow(c))),
       ),
-      reviewControls(s.id, s.note),
+      // The company list is not reviewed: it is done as soon as a student lists a company.
+      s.kind !== "companies" && reviewControls(s.id, s.note),
     );
     list.append(card);
   }
@@ -1703,7 +1653,11 @@ async function studentDetailView(id) {
             : h("p", { className: "desc" }, "No companies listed yet.")),
         sub?.note && h("div", { className: `callout ${status}` }, h("b", {}, "Note: "), sub.note),
       ),
-      h("div", { className: "act-side" }, sub && status !== "na" ? reviewControls(sub.id, sub.note) : null),
+      h(
+        "div",
+        { className: "act-side" },
+        sub && status !== "na" && !isCompanies ? reviewControls(sub.id, sub.note) : null,
+      ),
     );
   });
 

@@ -39,9 +39,9 @@ The coordinator's first two tasks are open; every other requirement is shown cro
 1. **Find OJT companies** – each student lists companies with their Facebook page or website (optional), the company email
    (or N/A), and whether they are inside or outside Legazpi. Each company also tracks **Applied / Not applied** and,
    once applied, the company's response: **No response / Accepted / Denied**. Double-click any of those tags (or
-   focus one and press Enter) to flip it. There is no separate submit step: the task counts as submitted as soon as
-   one company is added, students can keep adding (or editing/removing) companies at any time, and advisers see
-   the current list in the review queue.
+   focus one and press Enter) to flip it. There is no submit step and **no adviser review**: the task counts as done
+   as soon as one company is added (and goes back to to-do if the list is emptied), and students can keep adding,
+   editing or removing companies at any time. Advisers see the list on the student's page and in the Tracker.
 2. **Resume / CV** – a PDF or image upload. It is **optional**: students can submit it, but it does not count toward
    their progress.
 
@@ -53,9 +53,10 @@ to that company for review (not signing), (3) submit the reviewed MoA here, (4) 
 block finishes its MoAs. The marker follows the student's data: step 1 is done once a company is marked **Accepted**,
 step 3 once the "Memorandum of Agreement" task has a submission, and step 2 (which leaves no trace in the app) is ticked
 by the student with **I sent it for review** (remembered in their browser only). A side panel lists the key dates and
-reminders from the orientation. All of the wording lives in `public/roadmap.js`. Step 2 has a download button for the BU
-omnibus MoA template, which is stored at `public/files/OMNIBUS-MOA-Template.pdf` (replace that file to update it, or
-clear `MOA_TEMPLATE_URL` to show "Template coming soon" again).
+reminders from the orientation. All of the wording lives in `public/roadmap.js`. The templates students can download
+(the BU omnibus MoA as Word and PDF, and the endorsement letter sample as Word, so they can edit them) are stored in
+`public/files/`; replace a file there to update it. Step 1 notes that the department head's signature on the letter of
+intent is optional, and points to the endorsement letter for companies that ask for one before you apply.
 
 Admins can open or close any requirement (**Mark N/A** / **Open it** on the Requirements tab) as the coordinator
 releases the next tasks. Closed requirements cannot be submitted and are not counted in progress. The edit form also
@@ -65,25 +66,21 @@ has an **Optional** checkbox for tasks that should not count toward progress.
 
 - **Students tab** – every student with a progress bar and how many submissions await action. Click a student to open
   their page: every requirement with its status, their files, their company list (links, emails, inside/outside,
-  applied, response), and Approve / Reject with a note right there.
+  applied, response), and Approve / Reject with a note on each document right there.
 - **Review tab** – the queue across all students. Filter by Needs review / Rejected / Approved / All, and search by
   student, ID or requirement. Click a student's name to jump to their page.
-- **Tracker tab** – a full-screen grid for monitoring the whole class: one row per student. Columns are the required
-  tasks (**Done**, **In review**, **Needs changes**, outlined red **Missing**), then a single **Companies** column,
-  **Required done**, a **Missing** column naming what each student still has to do, and **Last activity**. The
-  Companies cell is one glance: a **green check** when every company the student listed has been reviewed, an amber
-  **clock** with a count when some are still in review, or a red **alert** when some were sent back. **Hover (or
-  focus) the cell** to see the companies by name: all of them for the green check, only the ones still in review for
-  the clock. Optional tasks such as the resume are not shown. The header and student column stay in view while you
-  scroll, and a totals row is pinned at the bottom. Click a header to sort (most urgent first), filter by _Has missing
-  work / Waiting for review / Complete_, search by student, ID, email **or company name**, and tick
-  **Show N/A tasks** to include the closed requirements. **Export to Excel (CSV)** still lists every company name in
-  its own column (Name, Student ID, Email, task statuses, Required approved, Company 1…N). Arrow keys move between
-  cells; Enter or double-click opens the student. It refreshes itself every minute.
-- **Per-company review** – on the Review tab and on a student's page, every company has its own note box and
-  **Approve / Reject** buttons (a rejection needs a reason). Students see the result and the note on that company.
-  Editing a company's name, link or email sends it back to "Not reviewed"; ticking Applied or Response does not.
-  The overall decision on the whole list is still made with the Approve / Reject buttons on the right.
+- **Tracker tab** – a full-screen grid for monitoring the whole class: one row per student (admins are listed too).
+  Columns are the open required tasks (**Done**, **In review**, **Needs changes**, outlined red **Missing**), a single
+  **Companies** column, and **Last activity**. The Companies cell shows a **green check** with how many companies the
+  student has listed, or **Missing** if none yet. **Hover (or focus) the cell** to see the companies by name, with
+  whether the student applied and the company's answer. The header and student column stay in view while you scroll,
+  and a totals row is pinned at the bottom. Click a header to sort (most urgent first), filter by _Has missing work /
+  Waiting for review / Complete_, search by student, ID, email **or company name**, and tick **Show N/A tasks** to
+  include the closed requirements. **Export to Excel (CSV)** lists every company name in its own column (Name, Student
+  ID, Email, task statuses, Required approved, Company 1…N). Arrow keys move between cells; Enter or double-click opens
+  the student. It refreshes itself every minute.
+- **Overview tab** (advisers) – class totals, the students who have no company yet, and how far the company hunt
+  has got (accepted by a company, applied and waiting, listed, nothing listed).
 - **MoA with BU** – advisers (not students) can flag a company as having a Memorandum of Agreement with the
   university by double-clicking its **MoA** tag. Students see the **MoA with BU** tag on that company.
 - **Exports** – on the Students tab, **Progress CSV** (one row per student, a status column for each open

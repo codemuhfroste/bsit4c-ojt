@@ -175,4 +175,11 @@ export const migrations = [
 
   // 12: record that each person accepted the Privacy Notice (and which version)
   ["ALTER TABLE users ADD COLUMN privacy_accepted_at TEXT", "ALTER TABLE users ADD COLUMN privacy_version TEXT"],
+
+  // 13: no adviser reviews the company list any more, so the "Find OJT companies" task counts as done as soon as a
+  // student has listed a company. Students who were waiting on a review are marked done too.
+  [
+    `UPDATE submissions SET status = 'approved', note = '', updated_at = datetime('now')
+     WHERE status <> 'approved' AND requirement_id IN (SELECT id FROM requirements WHERE kind = 'companies')`,
+  ],
 ];

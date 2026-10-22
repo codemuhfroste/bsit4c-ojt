@@ -420,10 +420,10 @@ describe("current tasks", () => {
     assert.equal((await add(student, { name: "Acme", link: "acme.com", location: "mars" })).status, 400);
     assert.equal(await state(student), null); // failed attempts submit nothing
 
-    // The first valid company submits the task by itself.
+    // The first valid company completes the task by itself: no adviser reviews the list.
     const first = await add(student, { name: "Acme Corp", link: "facebook.com/acme", location: "inside" });
     assert.equal(first.status, 201);
-    assert.equal((await state(student)).status, "submitted");
+    assert.equal((await state(student)).status, "approved");
     assert.equal(
       (await add(student, { name: "Beta IT", link: "https://beta.example.com", location: "outside" })).status,
       201,
@@ -450,8 +450,14 @@ describe("current tasks", () => {
       200,
     );
 
-    // Staff see the list inside the review queue.
-    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    // Staff still see the list next to the submission, but it never waits in the "needs review" queue.
+    assert.equal(
+      (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions.some(
+        (s) => s.email === "shopper@example.com",
+      ),
+      false,
+    );
+    const queue = (await admin("GET", "/api/admin/submissions?status=approved")).body.submissions;
     const entry = queue.find((s) => s.email === "shopper@example.com");
     assert.equal(entry.kind, "companies");
     assert.deepEqual(
@@ -459,16 +465,15 @@ describe("current tasks", () => {
       ["Acme Inc", "Beta IT"],
     );
 
-    // Rejected -> adding another company sends it back for review.
+    // Even if it was sent back by hand, adding another company puts it straight back to done.
     await admin("POST", `/api/admin/submissions/${entry.id}/review`, {
       json: { status: "rejected", note: "Need more" },
     });
     assert.equal((await state(student)).status, "rejected");
     assert.equal((await add(student, { name: "Gamma", link: "gamma.example.com", location: "inside" })).status, 201);
-    assert.equal((await state(student)).status, "submitted");
+    assert.equal((await state(student)).status, "approved");
 
-    // Approved stays approved, and students can still add, edit and remove companies.
-    await admin("POST", `/api/admin/submissions/${entry.id}/review`, { json: { status: "approved" } });
+    // Students can keep adding, editing and removing companies.
     assert.equal((await add(student, { name: "Delta", link: "delta.example.com", location: "outside" })).status, 201);
     assert.equal((await state(student)).status, "approved");
     assert.equal((await student("DELETE", `/api/companies/${first.body.id}`)).status, 200);
@@ -523,7 +528,7 @@ describe("current tasks", () => {
     assert.equal((await student("GET", "/api/companies")).body.companies[0].applied, true);
 
     // Reviewers see both fields.
-    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    const queue = (await admin("GET", "/api/admin/submissions?status=approved")).body.submissions;
     const entry = queue.find((x) => x.email === "applies@example.com");
     assert.deepEqual(
       entry.companies.map((c) => [c.email, c.applied]),
@@ -564,7 +569,7 @@ describe("current tasks", () => {
     assert.equal((await patch(student, { response: "maybe" })).status, 400);
 
     // Reviewers see the response.
-    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    const queue = (await admin("GET", "/api/admin/submissions?status=approved")).body.submissions;
     const entry = queue.find((x) => x.email === "toggles@example.com");
     assert.deepEqual(
       entry.companies.map((c) => [c.location, c.applied, c.response]),
@@ -602,7 +607,7 @@ describe("current tasks", () => {
     assert.equal(body.companies[0].applied, true);
     const byTitle = Object.fromEntries(body.items.map((i) => [i.title, i]));
     assert.equal(byTitle["Resume / CV"].submission.status, "submitted");
-    assert.equal(byTitle["Find OJT companies"].submission.status, "submitted");
+    assert.equal(byTitle["Find OJT companies"].submission.status, "approved");
     assert.equal(body.progress.total, 1);
 
     // Reviews list the student id so the adviser can jump to the student.
@@ -637,66 +642,50 @@ describe("current tasks", () => {
     assert.ok(!progress.split("\r\n")[0].includes("Resume"), "optional tasks are not in the export");
     const row = progress.split("\r\n").find((l) => l.includes("csv@example.com"));
     assert.match(row, /^"'=HYPERLINK/); // formula neutralised (and quoted, since it contains quotes)
-    assert.match(row, /,In review,0\/1,"Acme, ""The"" Co"/); // status, progress, then the exact company name
+    assert.match(row, /,Approved,1\/1,"Acme, ""The"" Co"/); // status, progress, then the exact company name
 
     const companies = await text("/api/admin/export/companies.csv");
     const line = companies.split("\r\n").find((l) => l.includes("csv@example.com"));
     assert.ok(line.includes('"Acme, ""The"" Co"')); // commas and quotes escaped
-    assert.ok(line.includes("N/A,Outside Legazpi,No,,No,Not reviewed,"));
+    assert.ok(line.includes("N/A,Outside Legazpi,No,,No,"));
+    assert.ok(!companies.split("\r\n")[0].includes("Review"), "no review columns any more");
   });
 
-  test("approving the company list is what completes the required progress", async () => {
+  test("listing a company completes the required progress without any adviser review", async () => {
     const student = await registerAndVerify("progress@example.com");
-    const admin = await adminClient();
+    const before = (await student("GET", "/api/requirements")).body.progress;
+    assert.deepEqual([before.approved, before.total], [0, 1]);
     await student("POST", "/api/companies", {
       json: { name: "Prog Co", link: "prog.example.com", email: "N/A", location: "inside" },
     });
-    const items = (await student("GET", "/api/requirements")).body;
-    assert.deepEqual([items.progress.approved, items.progress.total], [0, 1]);
-
-    const sub = items.items.find((i) => i.id === COMPANIES).submission;
-    await admin("POST", `/api/admin/submissions/${sub.id}/review`, { json: { status: "approved" } });
     const after = (await student("GET", "/api/requirements")).body.progress;
     assert.deepEqual([after.approved, after.total], [1, 1]);
   });
 
-  test("advisers review each company and flag a MoA; students cannot", async () => {
+  test("advisers flag a MoA on a company; students cannot, and there is no per-company review", async () => {
     const student = await registerAndVerify("reviewed@example.com");
     const other = await registerAndVerify("reviewed2@example.com");
     const admin = await adminClient();
     const mk = async (name) =>
       (
         await student("POST", "/api/companies", {
-          json: { name, link: `${name}.example.com`, email: "N/A", location: "inside", moa: true, review: "approved" },
+          json: { name, link: `${name}.example.com`, email: "N/A", location: "inside", moa: true },
         })
       ).body.id;
     const [first, second] = [await mk("firstco"), await mk("secondco")];
     const mine = async () => (await student("GET", "/api/companies")).body.companies;
 
-    // Students cannot set these on their own (the extra fields are ignored).
+    // Students cannot set the flag on their own (the extra field is ignored), and companies carry no review fields.
     assert.deepEqual(
-      (await mine()).map((c) => [c.review, c.moa]),
-      [
-        ["pending", false],
-        ["pending", false],
-      ],
+      (await mine()).map((c) => c.moa),
+      [false, false],
     );
-    const review = (c, id, body) => c("POST", `/api/admin/companies/${id}/review`, { json: body });
-    assert.equal((await review(student, first, { status: "approved" })).status, 403);
+    assert.ok(!("review" in (await mine())[0]) && !("reviewNote" in (await mine())[0]));
     assert.equal((await student("PATCH", `/api/admin/companies/${first}`, { json: { moa: true } })).status, 403);
-
-    // Reviewing: a rejection needs a reason, and the student sees the result.
-    assert.equal((await review(admin, first, { status: "rejected" })).status, 400);
-    assert.equal((await review(admin, first, { status: "bogus" })).status, 400);
-    assert.equal((await review(admin, 999999, { status: "approved" })).status, 404);
-    assert.equal((await review(admin, first, { status: "rejected", note: "Wrong page" })).status, 200);
-    assert.equal((await review(admin, second, { status: "approved", note: "Good fit" })).status, 200);
-    assert.deepEqual(
-      (await mine()).map((c) => [c.review, c.reviewNote]),
-      [
-        ["rejected", "Wrong page"],
-        ["approved", "Good fit"],
-      ],
+    // the old per-company review endpoint is gone
+    assert.equal(
+      (await admin("POST", `/api/admin/companies/${first}/review`, { json: { status: "approved" } })).status,
+      404,
     );
 
     // Only staff can set the MoA flag, and it validates its input.
@@ -705,27 +694,21 @@ describe("current tasks", () => {
     assert.equal((await mine())[1].moa, true);
     assert.equal((await other("GET", "/api/companies")).body.companies.length, 0);
 
-    // Toggling the student's own tags keeps the review; editing the company itself clears it.
-    assert.equal((await student("PATCH", `/api/companies/${second}`, { json: { applied: true } })).status, 200);
-    assert.equal((await mine())[1].review, "approved");
-    const edit = (id, extra) =>
-      student("PUT", `/api/companies/${id}`, {
-        json: { name: "secondco", link: "secondco.example.com", email: "N/A", location: "inside", ...extra },
-      });
-    assert.equal((await edit(second, { applied: true, response: "accepted" })).status, 200);
-    assert.equal((await mine())[1].review, "approved"); // same name/link/email -> review stays
-    assert.equal((await edit(second, { name: "Second Co Renamed" })).status, 200);
-    const after = (await mine())[1];
-    assert.deepEqual([after.review, after.reviewNote, after.moa], ["pending", "", true]); // MoA belongs to staff
+    // Editing the company keeps the MoA flag, which belongs to staff.
+    const renamed = await student("PUT", `/api/companies/${second}`, {
+      json: { name: "Second Co Renamed", link: "secondco.example.com", email: "N/A", location: "inside" },
+    });
+    assert.equal(renamed.status, 200);
+    assert.deepEqual((await mine())[1] && [(await mine())[1].name, (await mine())[1].moa], ["Second Co Renamed", true]);
 
-    // The adviser sees the id, review and MoA flag in the queue.
-    const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
+    // The adviser sees the id and MoA flag next to the list.
+    const queue = (await admin("GET", "/api/admin/submissions?status=approved")).body.submissions;
     const entry = queue.find((x) => x.email === "reviewed@example.com");
     assert.deepEqual(
-      entry.companies.map((c) => [c.id, c.review, c.moa]),
+      entry.companies.map((c) => [c.id, c.moa]),
       [
-        [first, "rejected", false],
-        [second, "pending", true],
+        [first, false],
+        [second, true],
       ],
     );
   });
@@ -757,33 +740,29 @@ describe("current tasks", () => {
     assert.ok(items.some((i) => i.id === COMPANIES)); // still there
   });
 
-  test("emptying an approved company list removes the approval too", async () => {
+  test("emptying the company list removes the approval too", async () => {
     const student = await registerAndVerify("approvedempty@example.com");
-    const admin = await adminClient();
     const made = await student("POST", "/api/companies", {
       json: { name: "Only Co", link: "only.example.com", email: "N/A", location: "inside" },
     });
-    const sub = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission;
-    await admin("POST", `/api/admin/submissions/${sub.id}/review`, { json: { status: "approved" } });
+    assert.equal(
+      (await student("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission.status,
+      "approved",
+    );
     assert.equal((await student("DELETE", `/api/companies/${made.body.id}`)).status, 200);
     const after = (await student("GET", "/api/requirements")).body;
     assert.equal(after.items.find((i) => i.id === COMPANIES).submission, null);
     assert.equal(after.progress.approved, 0); // no "Done" with nothing in it
   });
 
-  test("student list counts submissions awaiting review, not rejected ones", async () => {
+  test("student list never counts the company list as waiting for review", async () => {
     const student = await registerAndVerify("counts@example.com");
     const admin = await adminClient();
     await student("POST", "/api/companies", {
       json: { name: "Count Co", link: "count.example.com", email: "N/A", location: "inside" },
     });
-    const find = async () =>
-      (await admin("GET", "/api/admin/users")).body.users.find((u) => u.email === "counts@example.com");
-    assert.equal((await find()).inReview, 1);
-    const sub = (await student("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission;
-    await admin("POST", `/api/admin/submissions/${sub.id}/review`, { json: { status: "rejected", note: "no" } });
-    const row = await find();
-    assert.deepEqual([row.inReview, row.submitted, row.approved], [0, 1, 0]);
+    const row = (await admin("GET", "/api/admin/users")).body.users.find((u) => u.email === "counts@example.com");
+    assert.deepEqual([row.inReview, row.approved], [0, 1]);
   });
 
   test("tracker grid: one row per student with every requirement's status and the company numbers", async () => {
@@ -795,7 +774,7 @@ describe("current tasks", () => {
       json: { acceptPrivacy: true, email: "grid-nothing@example.com", password: PASSWORD, fullName: "Zed Nothing" },
     });
 
-    // done: company approved + resume approved; waiting: company in review, applied and accepted; nothing: no activity
+    // done: company listed + resume approved; waiting: two companies listed; nothing: no activity
     await done("POST", "/api/companies", {
       json: {
         name: "Done Co",
@@ -814,9 +793,7 @@ describe("current tasks", () => {
     });
     await done("POST", `/api/requirements/${RESUME}/submit`, { form: upload(pdf("cv")) });
     const mine = async (c) => (await c("GET", "/api/requirements")).body.items;
-    const companySub = (await mine(done)).find((i) => i.id === COMPANIES).submission.id;
     const resumeSub = (await mine(done)).find((i) => i.id === RESUME).submission.id;
-    await admin("POST", `/api/admin/submissions/${companySub}/review`, { json: { status: "approved" } });
     await admin("POST", `/api/admin/submissions/${resumeSub}/review`, { json: { status: "approved" } });
 
     const { status, body } = await admin("GET", "/api/admin/tracker");
@@ -840,7 +817,7 @@ describe("current tasks", () => {
     assert.equal(a.cells[RESUME].status, "approved");
     assert.deepEqual([a.companies.total, a.companies.applied, a.companies.accepted], [1, 1, 1]);
     const w = by["grid-waiting@example.com"];
-    assert.equal(w.cells[COMPANIES].status, "submitted");
+    assert.equal(w.cells[COMPANIES].status, "approved"); // listing a company is all it takes
     assert.equal(w.cells[RESUME], undefined); // no submission means "missing" on the grid
     assert.deepEqual([w.companies.total, w.companies.applied, w.companies.inside], [2, 1, 1]);
     const z = by["grid-nothing@example.com"];
@@ -889,7 +866,7 @@ describe("current tasks", () => {
       json: { name: "Solo Co", link: "solo.example.com", email: "N/A", location: "inside" },
     });
     const sub = async () => (await c("GET", "/api/requirements")).body.items.find((i) => i.id === COMPANIES).submission;
-    assert.equal((await sub()).status, "submitted");
+    assert.equal((await sub()).status, "approved");
     assert.equal((await c("DELETE", `/api/companies/${body.id}`)).status, 200);
     assert.equal(await sub(), null);
   });
@@ -939,7 +916,6 @@ describe("authorization matrix", () => {
     ];
     const staffWrite = [
       ["POST", "/api/admin/submissions/999999/review", { status: "approved" }],
-      ["POST", "/api/admin/companies/999999/review", { status: "approved" }],
       ["PATCH", "/api/admin/companies/999999", { moa: true }],
     ];
     const adminOnly = [

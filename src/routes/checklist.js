@@ -142,8 +142,6 @@ export const shapeCompany = (c) => ({
   applied: Boolean(c.applied),
   response: c.response,
   moa: Boolean(c.moa),
-  review: c.review,
-  reviewNote: c.review_note,
   createdAt: c.created_at,
 });
 
@@ -177,9 +175,9 @@ function parseCompany(body) {
   };
 }
 
-// The "Find OJT companies" submission follows the list automatically: it counts as submitted as soon as the student
-// has at least one company, and goes back to "to do" when the list is emptied. Approved stays approved while
-// companies remain, and students can keep adding companies afterwards.
+// The "Find OJT companies" submission follows the list automatically: no adviser reviews it, so it counts as done
+// (approved) as soon as the student has at least one company, and goes back to "to do" when the list is emptied.
+// Students can keep adding, editing and removing companies afterwards.
 async function syncCompanySubmission(userId) {
   const { rows: found } = await db.execute("SELECT id FROM requirements WHERE kind = 'companies' ORDER BY id LIMIT 1");
   if (!found[0]) return;
@@ -188,11 +186,9 @@ async function syncCompanySubmission(userId) {
 
   if (Number(rows[0].n) > 0) {
     await db.execute({
-      sql: `INSERT INTO submissions (user_id, requirement_id, status) VALUES (?1, ?2, 'submitted')
+      sql: `INSERT INTO submissions (user_id, requirement_id, status) VALUES (?1, ?2, 'approved')
             ON CONFLICT (user_id, requirement_id) DO UPDATE SET
-              status = CASE WHEN status = 'approved' THEN 'approved' ELSE 'submitted' END,
-              note = CASE WHEN status = 'approved' THEN note ELSE '' END,
-              updated_at = datetime('now')`,
+              status = 'approved', note = '', updated_at = datetime('now')`,
       args: [userId, requirementId],
     });
   } else {
@@ -230,10 +226,7 @@ router.put("/companies/:id", async (req, res) => {
   const id = parseId(req.params.id);
   const c = parseCompany(req.body);
   const result = await db.execute({
-    // Changing the company itself (name, link or email) sends it back to "not reviewed"; ticking applied etc. does not.
     sql: `UPDATE companies SET
-            review = CASE WHEN name = ?1 AND link = ?2 AND email = ?3 THEN review ELSE 'pending' END,
-            review_note = CASE WHEN name = ?1 AND link = ?2 AND email = ?3 THEN review_note ELSE '' END,
             name = ?1, link = ?2, email = ?3, location = ?4, applied = ?5, response = ?6
           WHERE id = ?7 AND user_id = ?8`,
     args: [c.name, c.link, c.email, c.location, c.applied, c.response, id, req.user.id],

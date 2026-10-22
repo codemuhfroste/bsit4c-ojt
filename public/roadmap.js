@@ -3,8 +3,13 @@
 // their Checklist. The wording comes from the OJT orientation; edit the text below as the process firms up.
 import { h, icon } from "/common.js";
 
-// The MoA template (the BU omnibus MoA). Step 2 shows a download button for it; leave this empty to show "Template coming soon".
-const MOA_TEMPLATE_URL = "/files/OMNIBUS-MOA-Template.pdf";
+// The downloadable templates, stored in public/files. The Word versions are there so students can edit them; replace a file
+// there to update it.
+const FILES = {
+  moaWord: { label: "MoA template (Word)", href: "/files/OMNIBUS-MOA-Template.docx" },
+  moaPdf: { label: "MoA template (PDF)", href: "/files/OMNIBUS-MOA-Template.pdf" },
+  endorsement: { label: "Endorsement letter sample (Word)", href: "/files/Endorsement_letter_sample.docx" },
+};
 
 // The deadline for submitting the reviewed MoA (step 3). Confirmed by the coordinator; edit here if it moves.
 const MOA_DEADLINE = new Date(2026, 9, 28); // 28 Oct 2026, local time
@@ -37,6 +42,10 @@ const writeFlag = (userId, on) => {
     // private mode: the tick just will not stick
   }
 };
+
+// A download rather than a link that opens: the site's security header blocks the browser's built-in PDF viewer.
+const downloadLink = (file) =>
+  h("a", { className: "btn outline sm", href: file.href, download: "" }, icon("download", 15), file.label);
 
 const list = (names) =>
   names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -79,7 +88,9 @@ export function roadmap({ items, companies, userId, go, rerender }) {
   const steps = [
     {
       title: "Send your letter of intent",
-      text: "Send a request letter and your resume to the companies you want. The letter is noted by the Head of the BUCS IT Department. Then wait for a company to accept you.",
+      text: "Send a request letter and your resume to the companies you want. Having the Head of the BUCS IT Department sign (“note”) the letter is optional. Then wait for a company to accept you.",
+      note: "Does a company want a BU endorsement letter before you apply? Download the sample, fill it in and get it signed.",
+      links: [FILES.endorsement],
       detail: detail1,
       action: p.companyTask && {
         label: companies.length ? "Open my companies" : "Add a company",
@@ -88,9 +99,8 @@ export function roadmap({ items, companies, userId, go, rerender }) {
     },
     {
       title: "Edit the MoA template",
-      text: "Once a company accepts you, download the template and fill in the highlighted parts: the company’s name and address, its authorized representative and position, and a witness. Send it to them for review only. Do not ask them to sign it yet.",
-      tag: MOA_TEMPLATE_URL ? "" : "Template coming soon",
-      link: MOA_TEMPLATE_URL && { label: "Download the template", href: MOA_TEMPLATE_URL },
+      text: "Once a company accepts you, download the template (the Word file, so you can edit it) and fill in the highlighted parts: the company’s name and address, its authorized representative and position, and a witness. Send it to them for review only. Do not ask them to sign it yet.",
+      links: [FILES.moaWord, FILES.moaPdf],
       detail: p.two && !p.three ? "Marked as sent for review." : "",
       action: p.current === 2 && {
         label: "I sent it for review",
@@ -149,13 +159,8 @@ export function roadmap({ items, companies, userId, go, rerender }) {
       h("p", { className: "rm-text" }, s.text),
       s.tag && h("span", { className: "rm-tag" }, s.tag),
       s.detail && h("p", { className: "rm-detail" }, s.detail),
-      s.link &&
-        h(
-          "a",
-          { className: "btn outline sm", href: s.link.href, download: "" }, // a download: the site's security header blocks the in-browser PDF viewer
-          icon("download", 15),
-          s.link.label,
-        ),
+      s.note && h("p", { className: "rm-note" }, s.note),
+      ...(s.links ?? []).map((l) => downloadLink(l)),
       s.action &&
         h(
           "button",
@@ -207,6 +212,12 @@ export function guideAside() {
   return h(
     "aside",
     { className: "guide", "aria-label": "Good to know" },
+    h(
+      "section",
+      { className: "card" },
+      h("h2", {}, "Templates to download"),
+      h("div", { className: "guide-files" }, ...Object.values(FILES).map((f) => downloadLink(f))),
+    ),
     h(
       "section",
       { className: "card" },

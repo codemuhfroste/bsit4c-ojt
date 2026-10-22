@@ -1,14 +1,13 @@
-// Tracker: a grid for advisers and admins. One row per student, one column per required task, then a single Companies
-// column: a green check when every company the student listed has been reviewed, or a clock with the companies still
-// in review. Hover (or focus) that cell to see the companies by name. The Excel export still lists each company name.
+// Tracker: a grid for advisers and admins. One row per student, one column per required task, and a single Companies
+// column: a green check with the number of companies the student has listed, or "Missing" if none yet. Hover (or focus)
+// that cell to see the companies by name. The Excel export still lists each company name.
 import { api, avatar, h, icon } from "/common.js";
 
 const RANK = { todo: 0, rejected: 1, submitted: 2, approved: 3 }; // sorting puts the most urgent first
 const LABEL = { approved: "Done", submitted: "In review", rejected: "Needs changes", todo: "Missing", na: "N/A" };
 const GLYPH = { approved: "check", submitted: "clock", rejected: "alert", todo: "minus", na: "minus" };
 const CO_LABEL = { accepted: "Accepted", denied: "Denied", applied: "Applied, no reply yet", idle: "Not applied yet" };
-const CO_RANK = { none: 0, changes: 1, review: 2, ok: 3 }; // sorting puts the most urgent first
-const CO_GLYPH = { ok: "check", review: "clock", changes: "alert", none: "minus" };
+const CO_RANK = { none: 0, ok: 1 }; // sorting puts the most urgent first
 
 // Kept between visits to the tab, so the adviser returns to the view they left.
 const state = { q: "", filter: "all", sortKey: "name", dir: 1, showNa: false };
@@ -29,13 +28,9 @@ function ago(s) {
 const coState = (c) =>
   c.response === "accepted" ? "accepted" : c.response === "denied" ? "denied" : c.applied ? "applied" : "idle";
 
-// Where a student stands on the company list: nothing listed, some still waiting for the adviser, some sent back, or
-// every company reviewed.
+// Where a student stands on the company list. No adviser reviews it: listing a company is what counts.
 export function companyInfo(list) {
-  const pending = list.filter((c) => c.review === "pending");
-  const rejected = list.filter((c) => c.review === "rejected");
-  const state = !list.length ? "none" : pending.length ? "review" : rejected.length ? "changes" : "ok";
-  return { state, pending, rejected, total: list.length };
+  return { state: list.length ? "ok" : "none", total: list.length };
 }
 
 // Adds what the grid needs to each student: status per requirement, what is missing, what awaits review.
@@ -101,7 +96,7 @@ export async function trackerView() {
     const value = (s) => {
       if (state.sortKey === "name") return (s.fullName || s.email).toLowerCase();
       if (col?.kind === "req") return RANK[info.statusFor(s, col.req)] ?? 9;
-      if (col?.kind === "company") return CO_RANK[s.companies.state] * 100 - s.companies.pending.length;
+      if (col?.kind === "company") return CO_RANK[s.companies.state] * 1000 + s.companies.total;
       if (state.sortKey === "activity") return s.lastActivity || "";
       return "";
     };
@@ -132,30 +127,16 @@ export async function trackerView() {
     );
   }
 
-  // The Companies cell is a single glance: a check when every company is reviewed, a clock when some still wait for
-  // the adviser, an alert when some were sent back. Hovering or focusing it opens the popover below.
+  // The Companies cell is a single glance: a check with how many companies the student listed. Hovering or focusing it
+  // opens the popover below with their names.
   const sentence = (n) => `${n} compan${n === 1 ? "y" : "ies"}`;
-
-  function companySentence(co) {
-    if (co.state === "none") return "missing, no companies listed";
-    if (co.state === "ok") return `complete, all ${sentence(co.total)} confirmed`;
-    if (co.state === "review") return `${co.pending.length} of ${sentence(co.total)} still in review`;
-    return `${co.rejected.length} of ${sentence(co.total)} need changes`;
-  }
-
-  // The companies the popover lists: those still in review, those sent back, or (all reviewed) every one.
-  const shownFor = (stu) => {
-    const co = stu.companies;
-    return co.state === "review" ? co.pending : co.state === "changes" ? co.rejected : stu.companyList;
-  };
+  const companySentence = (co) =>
+    co.state === "none" ? "missing, no companies listed" : `${sentence(co.total)} listed`;
 
   function companyCell(stu, col, base) {
     const co = stu.companies;
     const who = stu.fullName || stu.email;
-    const names = shownFor(stu)
-      .map((c) => c.name)
-      .join(", ");
-    const count = co.state === "ok" ? co.total : shownFor(stu).length;
+    const names = stu.companyList.map((c) => c.name).join(", ");
     const td = h(
       "td",
       {
@@ -167,10 +148,10 @@ export async function trackerView() {
         ? h("span", { className: "badge todo" }, icon(GLYPH.todo, 13), LABEL.todo)
         : h(
             "span",
-            { className: `co-badge ${co.state}` },
-            h("i", {}, icon(CO_GLYPH[co.state], 14)),
-            co.state === "ok" ? h("b", {}, "Complete") : h("b", {}, String(count)),
-            co.state !== "ok" && h("small", {}, co.state === "review" ? "in review" : "to fix"),
+            { className: "co-badge ok" },
+            h("i", {}, icon("check", 14)),
+            h("b", {}, String(co.total)),
+            h("small", {}, "listed"),
           ),
     );
     if (co.state !== "none") popFor.set(td, stu);
@@ -271,16 +252,14 @@ export async function trackerView() {
           ),
         );
       } else if (col.kind === "company") {
-        const count = (state) => rows.filter((s) => s.companies.state === state).length;
-        const [ok, review] = [count("ok"), count("review")];
-        const bad = rows.length - ok - review;
+        const ok = rows.filter((s) => s.companies.state === "ok").length;
         tr.append(
           tallyCell(
             ok,
-            review,
-            bad,
+            0,
+            rows.length - ok,
             rows.length,
-            `${ok} complete · ${review} still in review · ${bad} with none listed or needing changes`,
+            `${ok} with companies listed · ${rows.length - ok} with none yet`,
           ),
         );
       } else {
@@ -426,21 +405,16 @@ export async function trackerView() {
     const stu = popFor.get(cell);
     if (!stu) return hidePop();
     const co = stu.companies;
-    const shown = shownFor(stu);
-    const title =
-      co.state === "ok"
-        ? `All ${sentence(co.total)} confirmed`
-        : co.state === "review"
-          ? `${co.pending.length} still in review`
-          : `${co.rejected.length} sent back for changes`;
+    const shown = stu.companyList;
+    const title = `${sentence(co.total)} listed`;
 
-    pop.className = `pop ${co.state}`;
+    pop.className = "pop ok";
     pop.replaceChildren(
       ...[
         h(
           "div",
           { className: "pop-head" },
-          h("span", { className: `co-badge ${co.state}` }, h("i", {}, icon(CO_GLYPH[co.state], 14))),
+          h("span", { className: "co-badge ok" }, h("i", {}, icon("check", 14))),
           h("div", {}, h("b", {}, title), h("small", {}, stu.fullName || stu.email)),
         ),
         h(
@@ -465,9 +439,6 @@ export async function trackerView() {
           }),
         ),
         shown.length > POP_MAX && h("p", { className: "pop-foot" }, `+ ${shown.length - POP_MAX} more`),
-        co.state !== "ok" &&
-          co.total > shown.length &&
-          h("p", { className: "pop-foot" }, `${co.total - shown.length} more already confirmed`),
       ].filter(Boolean), // replaceChildren (unlike h) would print a literal "false"
     );
 
@@ -556,9 +527,7 @@ export async function trackerView() {
       h("span", { className: `legend-item ${s}` }, icon(GLYPH[s], 12), LABEL[s]),
     ),
     h("span", { className: "legend-sep" }),
-    h("span", { className: "legend-item co-ok" }, icon("check", 12), "Companies complete"),
-    h("span", { className: "legend-item co-review" }, icon("clock", 12), "Companies in review"),
-    h("span", { className: "legend-item co-changes" }, icon("alert", 12), "Companies sent back"),
+    h("span", { className: "legend-item co-ok" }, icon("check", 12), "Companies listed"),
     h("span", { className: "muted hint" }, "Hover a Companies cell for the names · Enter opens a student"),
   );
 
