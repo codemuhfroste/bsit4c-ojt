@@ -77,7 +77,11 @@ const HELP = [
         ],
         [
           "Either way,",
-          "download the template, fill in the yellow parts, get it signed (the OJT coordinator signs it and the Dean approves it) and upload it here. You only submit it once.",
+          "download the template, fill in the yellow parts, get it signed (the OJT coordinator signs it and the Dean approves it) and upload it here.",
+        ],
+        [
+          "Already submitted it?",
+          "If you already submitted it while applying for your internship, you do not need to submit it again alongside your other documents. Upload your copy here once so it shows as done.",
         ],
       ],
     },

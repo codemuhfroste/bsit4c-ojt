@@ -240,4 +240,15 @@ export const migrations = [
       ],
     },
   ],
+
+  // 16: the MoA students submit is the edited version their company has reviewed. It is not signed yet: the block
+  // president takes them all to the Dean's Office to be signed.
+  [
+    {
+      sql: "UPDATE requirements SET description = ? WHERE title = 'Memorandum of Agreement (MOA)'",
+      args: [
+        "Upload your edited MoA, the version your company has reviewed. It is not signed yet: your block president brings everyone's MoAs to the Dean's Office to be signed.",
+      ],
+    },
+  ],
 ];
