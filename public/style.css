@@ -2686,14 +2686,43 @@ table.sheet {
   line-height: 1.5;
   color: var(--muted);
 }
-.rm-note {
-  padding: 8px 10px;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--muted);
+.rm-forms {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rm-forms li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
   background: var(--surface);
-  border: 1px dashed var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: 10px;
+}
+.rm-forms b {
+  font-size: 0.86rem;
+}
+.rm-forms span {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.rm-forms a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.act-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
 }
 .rm-detail {
   font-size: 0.84rem;
@@ -2782,13 +2811,6 @@ table.sheet {
 .guide h2 {
   margin-bottom: 14px;
   font-size: 1rem;
-}
-.guide-files {
-  display: grid;
-  gap: 10px;
-}
-.guide-files .btn {
-  justify-content: flex-start;
 }
 .guide-dates,
 .guide-list {

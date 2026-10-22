@@ -8,8 +8,32 @@ import { h, icon } from "/common.js";
 const FILES = {
   moaWord: { label: "MoA template (Word)", href: "/files/OMNIBUS-MOA-Template.docx" },
   moaPdf: { label: "MoA template (PDF)", href: "/files/OMNIBUS-MOA-Template.pdf" },
-  endorsement: { label: "Endorsement letter sample (Word)", href: "/files/Endorsement_letter_sample.docx" },
 };
+
+// The other forms to accomplish once a company accepts you (step 4). Every value that belongs to a student, a company or
+// a date is left blank and highlighted in yellow in the Word file, so students can see what to fill in.
+const FORMS = [
+  {
+    name: "Letter of Acceptance",
+    hint: "Filled in with your company: your supervisor, schedule, hours and start date.",
+    href: "/files/Letter-of-Acceptance.docx",
+  },
+  {
+    name: "Mentorship Plan",
+    hint: "Your mentor fills in the goals and the weekly tasks.",
+    href: "/files/Mentorship-Plan.docx",
+  },
+  {
+    name: "Training Agreement and Waiver",
+    hint: "Signed by you, your parent or guardian and the Dean.",
+    href: "/files/Training-Agreement-and-Waiver.docx",
+  },
+  {
+    name: "Endorsement Letter",
+    hint: "Only if the company accepted you with just your letter of request, or asks for one before you apply.",
+    href: "/files/Endorsement-Letter.docx",
+  },
+];
 
 // The deadline for submitting the reviewed MoA (step 3). Confirmed by the coordinator; edit here if it moves.
 const MOA_DEADLINE = new Date(2026, 9, 28); // 28 Oct 2026, local time
@@ -46,6 +70,12 @@ const writeFlag = (userId, on) => {
 // A download rather than a link that opens: the site's security header blocks the browser's built-in PDF viewer.
 const downloadLink = (file) =>
   h("a", { className: "btn outline sm", href: file.href, download: "" }, icon("download", 15), file.label);
+
+// The MoA template buttons for the "Memorandum of Agreement" task card in the checklist (null for any other task).
+export const templateLinks = (item) =>
+  isMoa(item)
+    ? h("div", { className: "act-downloads" }, downloadLink(FILES.moaWord), downloadLink(FILES.moaPdf))
+    : null;
 
 const list = (names) =>
   names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -88,9 +118,7 @@ export function roadmap({ items, companies, userId, go, rerender }) {
   const steps = [
     {
       title: "Send your letter of intent",
-      text: "Send a request letter and your resume to the companies you want. Having the Head of the BUCS IT Department sign (“note”) the letter is optional. Then wait for a company to accept you.",
-      note: "Does a company want a BU endorsement letter before you apply? Download the sample, fill it in and get it signed.",
-      links: [FILES.endorsement],
+      text: "Send a letter of intent (also called a letter of request or inquiry) and your resume to the companies you want. The signatory from the department head is optional for the letter of inquiry. Then wait for a company to accept you.",
       detail: detail1,
       action: p.companyTask && {
         label: companies.length ? "Open my companies" : "Add a company",
@@ -128,8 +156,8 @@ export function roadmap({ items, companies, userId, go, rerender }) {
     },
     {
       title: "Prepare your other documents",
-      text: "While the rest of the block finishes their MoAs, work on your other documents. Details and templates will be posted here soon.",
-      tag: "Details coming soon",
+      text: "Once a company accepts you, and while the rest of the block finishes their MoAs, accomplish these forms. Download the Word file, fill in the yellow parts, then get it signed.",
+      forms: FORMS,
       detail: "",
     },
   ].map((step, i) => ({
@@ -159,7 +187,20 @@ export function roadmap({ items, companies, userId, go, rerender }) {
       h("p", { className: "rm-text" }, s.text),
       s.tag && h("span", { className: "rm-tag" }, s.tag),
       s.detail && h("p", { className: "rm-detail" }, s.detail),
-      s.note && h("p", { className: "rm-note" }, s.note),
+      s.forms &&
+        h(
+          "ul",
+          { className: "rm-forms" },
+          ...s.forms.map((f) =>
+            h(
+              "li",
+              {},
+              h("b", {}, f.name),
+              h("span", {}, f.hint),
+              h("a", { href: f.href, download: "" }, icon("download", 14), "Download (Word)"),
+            ),
+          ),
+        ),
       ...(s.links ?? []).map((l) => downloadLink(l)),
       s.action &&
         h(
@@ -212,12 +253,6 @@ export function guideAside() {
   return h(
     "aside",
     { className: "guide", "aria-label": "Good to know" },
-    h(
-      "section",
-      { className: "card" },
-      h("h2", {}, "Templates to download"),
-      h("div", { className: "guide-files" }, ...Object.values(FILES).map((f) => downloadLink(f))),
-    ),
     h(
       "section",
       { className: "card" },

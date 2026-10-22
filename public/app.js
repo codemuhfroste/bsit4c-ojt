@@ -1,6 +1,6 @@
 import { api, avatar, fmtDate, fmtDay, h, icon, openDialog, parseDay, toast } from "/common.js";
 import { overviewView } from "/overview.js";
-import { guideAside, roadmap } from "/roadmap.js";
+import { guideAside, roadmap, templateLinks } from "/roadmap.js";
 import { trackerView } from "/tracker.js";
 
 const view = document.getElementById("view");
@@ -831,6 +831,7 @@ function activity(item) {
       { className: "act-body" },
       h("h3", {}, item.title),
       item.description && h("p", { className: "desc" }, item.description),
+      templateLinks(item),
       metaEl,
       listEl,
       sub?.note && h("div", { className: `callout ${status}` }, h("b", {}, "Reviewer: "), sub.note),
@@ -841,11 +842,13 @@ function activity(item) {
 }
 
 async function checklistView() {
-  const [{ items, progress }, mine] = await Promise.all([
+  const [{ items: everything, progress }, mine] = await Promise.all([
     api("GET", "/api/requirements"),
     api("GET", "/api/companies"),
   ]);
   myCompanies = mine.companies;
+  // Tasks that are not open yet ("N/A for now") are hidden: crossed-out blocks only confused students.
+  const items = everything.filter((i) => i.available);
   const count = (s) => items.filter((i) => statusOf(i) === s).length; // everything listed (filter chips)
   const counted = items.filter((i) => !i.optional); // optional items do not count toward progress
   const countRequired = (s) => counted.filter((i) => statusOf(i) === s).length;

@@ -53,10 +53,14 @@ to that company for review (not signing), (3) submit the reviewed MoA here, (4) 
 block finishes its MoAs. The marker follows the student's data: step 1 is done once a company is marked **Accepted**,
 step 3 once the "Memorandum of Agreement" task has a submission, and step 2 (which leaves no trace in the app) is ticked
 by the student with **I sent it for review** (remembered in their browser only). A side panel lists the key dates and
-reminders from the orientation. All of the wording lives in `public/roadmap.js`. The templates students can download
-(the BU omnibus MoA as Word and PDF, and the endorsement letter sample as Word, so they can edit them) are stored in
-`public/files/`; replace a file there to update it. Step 1 notes that the department head's signature on the letter of
-intent is optional, and points to the endorsement letter for companies that ask for one before you apply.
+reminders from the orientation. All of the wording lives in `public/roadmap.js`. Downloads sit with the section they
+belong to: the MoA template (Word, so students can edit it, and PDF) is on roadmap step 2 and on the "Memorandum of
+Agreement" task itself, and step 4 lists the other forms to accomplish once a company accepts the student (Letter of
+Acceptance, Mentorship Plan, Training Agreement and Waiver, and the Endorsement Letter for companies that only accepted
+a letter of request). They live in `public/files/`; in those Word files every value that belongs to a student, a company
+or a date is blank and highlighted in yellow so students can see what to fill in. Replace a file there to update it.
+Step 1 treats the letter of intent, request and inquiry as the same thing and notes that the department head's signatory
+is optional. Tasks that are not open yet (N/A for now) are hidden from students.
 
 Admins can open or close any requirement (**Mark N/A** / **Open it** on the Requirements tab) as the coordinator
 releases the next tasks. Closed requirements cannot be submitted and are not counted in progress. The edit form also
