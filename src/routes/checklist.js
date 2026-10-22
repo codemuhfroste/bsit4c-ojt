@@ -142,6 +142,7 @@ export const shapeCompany = (c) => ({
   applied: Boolean(c.applied),
   response: c.response,
   moa: Boolean(c.moa),
+  isFinal: Boolean(c.is_final),
   createdAt: c.created_at,
 });
 
@@ -227,6 +228,7 @@ router.put("/companies/:id", async (req, res) => {
   const c = parseCompany(req.body);
   const result = await db.execute({
     sql: `UPDATE companies SET
+            is_final = CASE WHEN ?6 = 'accepted' THEN is_final ELSE 0 END,
             name = ?1, link = ?2, email = ?3, location = ?4, applied = ?5, response = ?6
           WHERE id = ?7 AND user_id = ?8`,
     args: [c.name, c.link, c.email, c.location, c.applied, c.response, id, req.user.id],
@@ -239,7 +241,7 @@ router.put("/companies/:id", async (req, res) => {
 // Quick one-field changes (the double-click toggles): location, applied and response only.
 router.patch("/companies/:id", async (req, res) => {
   const id = parseId(req.params.id);
-  const { location, applied, response } = req.body ?? {};
+  const { location, applied, response, final } = req.body ?? {};
   if (location !== undefined && location !== "inside" && location !== "outside") {
     throw new HttpError(400, "Choose inside or outside Legazpi.");
   }
@@ -247,17 +249,39 @@ router.patch("/companies/:id", async (req, res) => {
     throw new HttpError(400, "Response must be none, accepted or denied.");
   }
   if (applied !== undefined && typeof applied !== "boolean") throw new HttpError(400, "Applied must be true or false.");
+  if (final !== undefined && typeof final !== "boolean") throw new HttpError(400, "Final must be true or false.");
 
   // One statement: omitted fields keep their value, and a response only sticks while applied.
   const result = await db.execute({
     sql: `UPDATE companies SET
             location = COALESCE(?1, location),
             applied = COALESCE(?2, applied),
-            response = CASE WHEN COALESCE(?2, applied) = 0 THEN 'none' ELSE COALESCE(?3, response) END
+            response = CASE WHEN COALESCE(?2, applied) = 0 THEN 'none' ELSE COALESCE(?3, response) END,
+            is_final = CASE WHEN COALESCE(?2, applied) = 0 OR COALESCE(?3, response) <> 'accepted' THEN 0 ELSE is_final END
           WHERE id = ?4 AND user_id = ?5`,
     args: [location ?? null, applied === undefined ? null : applied ? 1 : 0, response ?? null, id, req.user.id],
   });
   if (!result.rowsAffected) throw new HttpError(404, "Company not found.");
+
+  // The final company: only a company that accepted the student can be it, and there is only ever one.
+  if (final === true) {
+    const [, chosen] = await db.batch(
+      [
+        { sql: "UPDATE companies SET is_final = 0 WHERE user_id = ?", args: [req.user.id] },
+        {
+          sql: "UPDATE companies SET is_final = 1 WHERE id = ? AND user_id = ? AND response = 'accepted'",
+          args: [id, req.user.id],
+        },
+      ],
+      "write",
+    );
+    if (!chosen.rowsAffected) throw new HttpError(400, "Only a company that accepted you can be your final company.");
+  } else if (final === false) {
+    await db.execute({
+      sql: "UPDATE companies SET is_final = 0 WHERE id = ? AND user_id = ?",
+      args: [id, req.user.id],
+    });
+  }
   res.json({ ok: true });
 });
 

@@ -2220,6 +2220,10 @@ table.sheet {
   color: var(--ok);
 }
 .co-badge small {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin-left: -3px;
   font-size: 0.78rem;
   font-weight: 500;
@@ -2685,38 +2689,6 @@ table.sheet {
   font-size: 0.86rem;
   line-height: 1.5;
   color: var(--muted);
-}
-.rm-forms {
-  display: grid;
-  gap: 8px;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.rm-forms li {
-  display: grid;
-  gap: 2px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.rm-forms b {
-  font-size: 0.86rem;
-}
-.rm-forms span {
-  font-size: 0.78rem;
-  line-height: 1.4;
-  color: var(--muted);
-}
-.rm-forms a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 4px;
-  font-size: 0.8rem;
-  font-weight: 600;
 }
 .act-downloads {
   display: flex;

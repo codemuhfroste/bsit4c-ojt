@@ -252,16 +252,25 @@ describe("checklist", () => {
       [...new Set(body.items.map((i) => i.phase))],
       ["Current tasks", "Before OJT", "During OJT", "After OJT"],
     );
-    // Only the two current tasks are open; everything else is "N/A for now" and not counted.
+    // The company list, the resume, the MoA and the forms to accomplish are open (the MoA first in "Before OJT");
+    // everything else is "N/A for now" and not counted.
     assert.deepEqual(
       body.items.filter((i) => i.available).map((i) => i.title),
-      ["Find OJT companies", "Resume / CV"],
+      [
+        "Find OJT companies",
+        "Resume / CV",
+        "Memorandum of Agreement (MOA)",
+        "Letter of Acceptance",
+        "Mentorship Plan",
+        "Training Agreement and Waiver",
+        "Endorsement letter",
+      ],
     );
-    // The resume is optional: open and submittable, but not counted in progress.
-    assert.equal(body.progress.total, 1);
+    // The resume and the endorsement letter are optional: open and submittable, but not counted in progress.
+    assert.equal(body.progress.total, 5);
     assert.deepEqual(
       body.items.filter((i) => i.optional).map((i) => i.title),
-      ["Resume / CV"],
+      ["Resume / CV", "Endorsement letter"],
     );
     assert.equal(body.progress.approved, 0);
   });
@@ -337,7 +346,7 @@ describe("checklist", () => {
 
     const users = await admin("GET", "/api/admin/users");
     // An approved optional requirement does not count toward the student's progress.
-    assert.equal(users.body.totalRequirements, 1);
+    assert.equal(users.body.totalRequirements, 5);
     assert.equal(users.body.users.find((u) => u.email === "student@example.com").approved, 0);
   });
 
@@ -480,6 +489,53 @@ describe("current tasks", () => {
     assert.equal((await student("GET", "/api/companies")).body.companies.length, 3);
   });
 
+  test("a student accepted by several companies picks one final company", async () => {
+    const student = await registerAndVerify("final@example.com");
+    const other = await registerAndVerify("final2@example.com");
+    const admin = await adminClient();
+    const add = async (name, extra) =>
+      (
+        await student("POST", "/api/companies", {
+          json: { name, link: "", email: "N/A", location: "inside", applied: true, ...extra },
+        })
+      ).body.id;
+    const [alpha, beta, gamma] = [
+      await add("Alpha", { response: "accepted" }),
+      await add("Beta", { response: "accepted" }),
+      await add("Gamma", { response: "denied" }),
+    ];
+    const finals = async () => (await student("GET", "/api/companies")).body.companies.map((c) => c.isFinal);
+    const choose = (id, final) => student("PATCH", `/api/companies/${id}`, { json: { final } });
+
+    assert.deepEqual(await finals(), [false, false, false]);
+    assert.equal((await choose(gamma, true)).status, 400); // only a company that accepted you
+    assert.equal((await choose(alpha, "yes")).status, 400);
+    assert.equal((await other("PATCH", `/api/companies/${alpha}`, { json: { final: true } })).status, 404); // not theirs
+
+    assert.equal((await choose(alpha, true)).status, 200);
+    assert.deepEqual(await finals(), [true, false, false]);
+    assert.equal((await choose(beta, true)).status, 200); // there is only ever one
+    assert.deepEqual(await finals(), [false, true, false]);
+
+    // Staff see it in the Tracker.
+    const row = (await admin("GET", "/api/admin/tracker")).body.students.find((s) => s.email === "final@example.com");
+    assert.deepEqual(
+      row.companyList.map((c) => [c.name, c.final]),
+      [
+        ["Alpha", false],
+        ["Beta", true],
+        ["Gamma", false],
+      ],
+    );
+
+    // A company that stops saying "accepted" is no longer the final one.
+    assert.equal((await student("PATCH", `/api/companies/${beta}`, { json: { response: "denied" } })).status, 200);
+    assert.deepEqual(await finals(), [false, false, false]);
+    assert.equal((await choose(alpha, true)).status, 200);
+    assert.equal((await choose(alpha, false)).status, 200);
+    assert.deepEqual(await finals(), [false, false, false]);
+  });
+
   test("company website is optional", async () => {
     const student = await registerAndVerify("nolink@example.com");
     const post = (body) => student("POST", "/api/companies", { json: { email: "N/A", location: "inside", ...body } });
@@ -608,7 +664,7 @@ describe("current tasks", () => {
     const byTitle = Object.fromEntries(body.items.map((i) => [i.title, i]));
     assert.equal(byTitle["Resume / CV"].submission.status, "submitted");
     assert.equal(byTitle["Find OJT companies"].submission.status, "approved");
-    assert.equal(body.progress.total, 1);
+    assert.equal(body.progress.total, 5);
 
     // Reviews list the student id so the adviser can jump to the student.
     const queue = (await admin("GET", "/api/admin/submissions?status=submitted")).body.submissions;
@@ -636,13 +692,15 @@ describe("current tasks", () => {
 
     const progress = await text("/api/admin/export/progress.csv");
     assert.ok(
-      progress.startsWith("\uFEFFName,Student ID,Email,Find OJT companies,Required approved,Company 1"),
+      progress.startsWith(
+        "\uFEFFName,Student ID,Email,Find OJT companies,Memorandum of Agreement (MOA),Letter of Acceptance,Mentorship Plan,Training Agreement and Waiver,Required approved,Company 1",
+      ),
       progress.split("\r\n")[0],
     );
     assert.ok(!progress.split("\r\n")[0].includes("Resume"), "optional tasks are not in the export");
     const row = progress.split("\r\n").find((l) => l.includes("csv@example.com"));
     assert.match(row, /^"'=HYPERLINK/); // formula neutralised (and quoted, since it contains quotes)
-    assert.match(row, /,Approved,1\/1,"Acme, ""The"" Co"/); // status, progress, then the exact company name
+    assert.match(row, /,Approved,To do,To do,To do,To do,1\/5,"Acme, ""The"" Co"/); // status, progress, then the exact company name
 
     const companies = await text("/api/admin/export/companies.csv");
     const line = companies.split("\r\n").find((l) => l.includes("csv@example.com"));
@@ -654,12 +712,12 @@ describe("current tasks", () => {
   test("listing a company completes the required progress without any adviser review", async () => {
     const student = await registerAndVerify("progress@example.com");
     const before = (await student("GET", "/api/requirements")).body.progress;
-    assert.deepEqual([before.approved, before.total], [0, 1]);
+    assert.deepEqual([before.approved, before.total], [0, 5]);
     await student("POST", "/api/companies", {
       json: { name: "Prog Co", link: "prog.example.com", email: "N/A", location: "inside" },
     });
     const after = (await student("GET", "/api/requirements")).body.progress;
-    assert.deepEqual([after.approved, after.total], [1, 1]);
+    assert.deepEqual([after.approved, after.total], [1, 5]);
   });
 
   test("advisers flag a MoA on a company; students cannot, and there is no per-company review", async () => {
@@ -803,6 +861,11 @@ describe("current tasks", () => {
       [
         ["Find OJT companies", false],
         ["Resume / CV", true],
+        ["Memorandum of Agreement (MOA)", false],
+        ["Letter of Acceptance", false],
+        ["Mentorship Plan", false],
+        ["Training Agreement and Waiver", false],
+        ["Endorsement letter", true],
       ],
     );
     assert.ok(

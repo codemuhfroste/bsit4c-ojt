@@ -41,7 +41,10 @@ The coordinator's first two tasks are open; every other requirement is shown cro
    once applied, the company's response: **No response / Accepted / Denied**. Double-click any of those tags (or
    focus one and press Enter) to flip it. There is no submit step and **no adviser review**: the task counts as done
    as soon as one company is added (and goes back to to-do if the list is emptied), and students can keep adding,
-   editing or removing companies at any time. Advisers see the list on the student's page and in the Tracker.
+   editing or removing companies at any time. Advisers see the list on the student's page and in the Tracker. A student
+   accepted by **more than one** company picks the **final company** with the **Make final** button on one of the
+   accepted companies (only an accepted company can be final, and there is only ever one); the roadmap, the student's
+   page and the Tracker show which it is.
 2. **Resume / CV** – a PDF or image upload. It is **optional**: students can submit it, but it does not count toward
    their progress.
 
@@ -54,12 +57,12 @@ block finishes its MoAs. The marker follows the student's data: step 1 is done o
 step 3 once the "Memorandum of Agreement" task has a submission, and step 2 (which leaves no trace in the app) is ticked
 by the student with **I sent it for review** (remembered in their browser only). A side panel lists the key dates and
 reminders from the orientation. All of the wording lives in `public/roadmap.js`. Downloads sit with the section they
-belong to: the MoA template (Word, so students can edit it, and PDF) is on roadmap step 2 and on the "Memorandum of
-Agreement" task itself, and step 4 lists the other forms to accomplish once a company accepts the student (Letter of
-Acceptance, Mentorship Plan, Training Agreement and Waiver, and the Endorsement Letter for companies that only accepted
-a letter of request). They live in `public/files/`; in those Word files every value that belongs to a student, a company
-or a date is blank and highlighted in yellow so students can see what to fill in. Replace a file there to update it.
-Step 1 treats the letter of intent, request and inquiry as the same thing and notes that the department head's signatory
+belong to, each on the task that needs it: the **Before OJT** checklist section lists the Memorandum of Agreement first,
+then the Letter of Acceptance, Mentorship Plan, Training Agreement and Waiver and the (optional) Endorsement letter, and
+every one has its Word template to download (the MoA also as PDF, and roadmap step 2 repeats the MoA buttons). They live
+in `public/files/` and are matched to a task by its title in `public/roadmap.js`; in the Word files every value that
+belongs to a student, a company or a date is blank and highlighted in yellow so students can see what to fill in.
+Replace a file there to update it. Step 1 treats the letter of intent, request and inquiry as the same thing and notes that the department head's signatory
 is optional. Tasks that are not open yet (N/A for now) are hidden from students.
 
 Admins can open or close any requirement (**Mark N/A** / **Open it** on the Requirements tab) as the coordinator

@@ -10,29 +10,17 @@ const FILES = {
   moaPdf: { label: "MoA template (PDF)", href: "/files/OMNIBUS-MOA-Template.pdf" },
 };
 
-// The other forms to accomplish once a company accepts you (step 4). Every value that belongs to a student, a company or
-// a date is left blank and highlighted in yellow in the Word file, so students can see what to fill in.
-const FORMS = [
-  {
-    name: "Letter of Acceptance",
-    hint: "Filled in with your company: your supervisor, schedule, hours and start date.",
-    href: "/files/Letter-of-Acceptance.docx",
-  },
-  {
-    name: "Mentorship Plan",
-    hint: "Your mentor fills in the goals and the weekly tasks.",
-    href: "/files/Mentorship-Plan.docx",
-  },
-  {
-    name: "Training Agreement and Waiver",
-    hint: "Signed by you, your parent or guardian and the Dean.",
-    href: "/files/Training-Agreement-and-Waiver.docx",
-  },
-  {
-    name: "Endorsement Letter",
-    hint: "Only if the company accepted you with just your letter of request, or asks for one before you apply.",
-    href: "/files/Endorsement-Letter.docx",
-  },
+// The template for each task that has one, found by the task's title. In the Word files every value that belongs to a
+// student, a company or a date is left blank and highlighted in yellow, so students can see what to fill in.
+const TEMPLATES = [
+  [/^memorandum of agreement/i, [FILES.moaWord, FILES.moaPdf]],
+  [/^letter of acceptance/i, [{ label: "Letter of Acceptance (Word)", href: "/files/Letter-of-Acceptance.docx" }]],
+  [/^mentorship plan/i, [{ label: "Mentorship Plan (Word)", href: "/files/Mentorship-Plan.docx" }]],
+  [
+    /^training agreement/i,
+    [{ label: "Training Agreement and Waiver (Word)", href: "/files/Training-Agreement-and-Waiver.docx" }],
+  ],
+  [/^endorsement letter/i, [{ label: "Endorsement Letter (Word)", href: "/files/Endorsement-Letter.docx" }]],
 ];
 
 // The deadline for submitting the reviewed MoA (step 3). Confirmed by the coordinator; edit here if it moves.
@@ -71,11 +59,14 @@ const writeFlag = (userId, on) => {
 const downloadLink = (file) =>
   h("a", { className: "btn outline sm", href: file.href, download: "" }, icon("download", 15), file.label);
 
-// The MoA template buttons for the "Memorandum of Agreement" task card in the checklist (null for any other task).
-export const templateLinks = (item) =>
-  isMoa(item)
-    ? h("div", { className: "act-downloads" }, downloadLink(FILES.moaWord), downloadLink(FILES.moaPdf))
-    : null;
+// The template buttons shown on a task's card in the checklist (null for a task without a template).
+export function templateLinks(item) {
+  const hit = TEMPLATES.find(([title]) => title.test(item.title));
+  return hit ? h("div", { className: "act-downloads" }, ...hit[1].map(downloadLink)) : null;
+}
+
+// "Acme Inc." + "." should not become "Acme Inc.."
+const dot = (text) => (text.endsWith(".") ? text : `${text}.`);
 
 const list = (names) =>
   names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
@@ -89,23 +80,33 @@ function progressOf({ items, companies, userId }) {
   const accepted = companies.filter((c) => c.response === "accepted");
   const applied = companies.filter((c) => c.applied);
 
-  const one = accepted.length > 0 || moaSent;
+  // One acceptance settles it; with several the student has to choose. The MoA being sent also settles it.
+  const final = accepted.find((c) => c.isFinal) ?? (accepted.length === 1 ? accepted[0] : null);
+  const needsChoice = accepted.length > 1 && !final;
+  const formsTask = items.find((i) => /^letter of acceptance/i.test(i.title));
+  const one = Boolean(final) || moaSent;
   const two = moaSent || (one && readFlag(userId));
   const three = moaSent;
   const current = !one ? 1 : !two ? 2 : !three ? 3 : 4;
-  return { companyTask, moa, moaStatus, accepted, applied, one, two, three, current };
+  return { companyTask, moa, moaStatus, accepted, applied, final, needsChoice, formsTask, one, two, three, current };
 }
 
 export function roadmap({ items, companies, userId, go, rerender }) {
   const p = progressOf({ items, companies, userId });
 
-  const detail1 = p.accepted.length
-    ? `Accepted by ${list(p.accepted.map((c) => c.name))}.`
-    : p.applied.length
-      ? `${p.applied.length} letter${p.applied.length === 1 ? "" : "s"} sent. Waiting for a reply.`
-      : companies.length
-        ? "Tick “I already applied here” on a company once its letter is sent."
-        : "Start by adding the companies you will send letters to.";
+  const detail1 = p.needsChoice
+    ? `Accepted by ${dot(list(p.accepted.map((c) => c.name)))} Choose your final company.`
+    : p.final
+      ? p.accepted.length > 1
+        ? `Final company: ${dot(p.final.name)}`
+        : `Accepted by ${dot(p.final.name)}`
+      : p.accepted.length
+        ? `Accepted by ${dot(list(p.accepted.map((c) => c.name)))}`
+        : p.applied.length
+          ? `${p.applied.length} letter${p.applied.length === 1 ? "" : "s"} sent. Waiting for a reply.`
+          : companies.length
+            ? "Tick “I already applied here” on a company once its letter is sent."
+            : "Start by adding the companies you will send letters to.";
   const detail3 =
     p.moaStatus === "approved"
       ? "Approved by your adviser."
@@ -121,7 +122,7 @@ export function roadmap({ items, companies, userId, go, rerender }) {
       text: "Send a letter of intent (also called a letter of request or inquiry) and your resume to the companies you want. The signatory from the department head is optional for the letter of inquiry. Then wait for a company to accept you.",
       detail: detail1,
       action: p.companyTask && {
-        label: companies.length ? "Open my companies" : "Add a company",
+        label: p.needsChoice ? "Choose final company" : companies.length ? "Open my companies" : "Add a company",
         run: () => go(p.companyTask.id),
       },
     },
@@ -129,7 +130,9 @@ export function roadmap({ items, companies, userId, go, rerender }) {
       title: "Edit the MoA template",
       text: "Once a company accepts you, download the template (the Word file, so you can edit it) and fill in the highlighted parts: the company’s name and address, its authorized representative and position, and a witness. Send it to them for review only. Do not ask them to sign it yet.",
       links: [FILES.moaWord, FILES.moaPdf],
-      detail: p.two && !p.three ? "Marked as sent for review." : "",
+      detail: [p.final && `For ${dot(p.final.name)}`, p.two && !p.three && "Marked as sent for review."]
+        .filter(Boolean)
+        .join(" "),
       action: p.current === 2 && {
         label: "I sent it for review",
         run: () => {
@@ -156,9 +159,9 @@ export function roadmap({ items, companies, userId, go, rerender }) {
     },
     {
       title: "Prepare your other documents",
-      text: "Once a company accepts you, and while the rest of the block finishes their MoAs, accomplish these forms. Download the Word file, fill in the yellow parts, then get it signed.",
-      forms: FORMS,
+      text: "Once a company accepts you, and while the rest of the block finishes their MoAs, accomplish the other forms listed under Before OJT. Each one has a Word template to download: fill in the yellow parts, get it signed and upload it.",
       detail: "",
+      action: p.formsTask && { label: "Open the forms", run: () => go(p.formsTask.id) },
     },
   ].map((step, i) => ({
     ...step,
@@ -187,20 +190,6 @@ export function roadmap({ items, companies, userId, go, rerender }) {
       h("p", { className: "rm-text" }, s.text),
       s.tag && h("span", { className: "rm-tag" }, s.tag),
       s.detail && h("p", { className: "rm-detail" }, s.detail),
-      s.forms &&
-        h(
-          "ul",
-          { className: "rm-forms" },
-          ...s.forms.map((f) =>
-            h(
-              "li",
-              {},
-              h("b", {}, f.name),
-              h("span", {}, f.hint),
-              h("a", { href: f.href, download: "" }, icon("download", 14), "Download (Word)"),
-            ),
-          ),
-        ),
       ...(s.links ?? []).map((l) => downloadLink(l)),
       s.action &&
         h(

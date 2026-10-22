@@ -182,4 +182,51 @@ export const migrations = [
     `UPDATE submissions SET status = 'approved', note = '', updated_at = datetime('now')
      WHERE status <> 'approved' AND requirement_id IN (SELECT id FROM requirements WHERE kind = 'companies')`,
   ],
+
+  // 14: a student accepted by more than one company picks the final one, and the forms to accomplish once a company
+  // accepts you join "Before OJT" in checklist order (the MoA first). Closed tasks stay closed.
+  [
+    "ALTER TABLE companies ADD COLUMN is_final INTEGER NOT NULL DEFAULT 0",
+    ...[
+      [
+        "Letter of Acceptance",
+        "Download the template, fill in the yellow parts with your company, get it signed by your supervisor and your OJT coordinator, then upload it here.",
+      ],
+      [
+        "Mentorship Plan",
+        "Your mentor fills in the goals and the weekly tasks. Download the template and upload the signed plan here.",
+        0,
+      ],
+      [
+        "Training Agreement and Waiver",
+        "Download the template and fill it in. It is signed by you, your parent or guardian and the Dean. Upload the signed copy here.",
+      ],
+    ].map(([title, description]) => ({
+      sql: `INSERT INTO requirements (title, description, phase, requires_file, available, optional, sort_order)
+            VALUES (?, ?, 'Before OJT', 1, 1, 0, 0)`,
+      args: [title, description],
+    })),
+    "UPDATE requirements SET available = 1 WHERE title = 'Memorandum of Agreement (MOA)'",
+    {
+      sql: "UPDATE requirements SET available = 1, optional = 1, description = ? WHERE title = 'Endorsement letter'",
+      args: [
+        "Optional. Only needed if the company accepted you with just your letter of request, or asks for one before you apply. Download the template, fill it in, get it signed and upload it here.",
+      ],
+    },
+    ...[
+      ["Memorandum of Agreement (MOA)", 1],
+      ["Letter of Acceptance", 2],
+      ["Mentorship Plan", 3],
+      ["Training Agreement and Waiver", 4],
+      ["Endorsement letter", 5],
+      ["Parent/guardian consent form", 6],
+      ["Medical certificate", 7],
+      ["Weekly accomplishment reports", 8],
+      ["Daily time record (DTR)", 9],
+      ["Certificate of completion", 10],
+    ].map(([title, order]) => ({
+      sql: "UPDATE requirements SET sort_order = ? WHERE title = ?",
+      args: [order, title],
+    })),
+  ],
 ];

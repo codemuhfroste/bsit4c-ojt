@@ -165,6 +165,7 @@ router.get("/me/export", requireAuth, async (req, res) => {
       applied: Boolean(c.applied),
       response: c.response,
       hasMoaWithUniversity: Boolean(c.moa),
+      isFinalChoice: Boolean(c.is_final),
       addedAt: c.created_at,
     })),
     submissions: submissions.map((s) => ({

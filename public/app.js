@@ -285,6 +285,22 @@ function companyTags(c, patch, staff = false) {
     const next = RESPONSE_ORDER[(RESPONSE_ORDER.indexOf(c.response) + 1) % RESPONSE_ORDER.length];
     tags.push(tag(r.label, r.icon, r.cls, patch && ((el) => patch({ response: next }, el)), "Response"));
   }
+  // A student accepted by more than one company picks the final one; everyone sees which it is.
+  if (c.isFinal) {
+    tags.push(
+      tag("Final company", "check", "approved", patch && ((el) => patch({ final: false }, el)), "Final company"),
+    );
+  } else if (patch && c.response === "accepted" && myCompanies.filter((x) => x.response === "accepted").length > 1) {
+    // a plain one-click button: this is a deliberate choice, not a tag to flip
+    tags.push(
+      h(
+        "button",
+        { type: "button", className: "btn sm outline", onclick: (e) => patch({ final: true }, e.currentTarget) },
+        icon("check", 14),
+        "Make final",
+      ),
+    );
+  }
   // Set by advisers: whether the university has a MoA with this company.
   if (!staff && c.moa) tags.push(tag("MoA with BU", "shield", "approved"));
   return h("div", { className: "tags" }, ...tags);
@@ -458,7 +474,10 @@ function addCompany(fields) {
 }
 
 function updateCompany(c, fields) {
-  myCompanies = myCompanies.map((x) => (x.id === c.id ? { ...x, ...fields } : x));
+  // A company that no longer says "accepted" cannot be the final one (the server applies the same rule).
+  myCompanies = myCompanies.map((x) =>
+    x.id === c.id ? { ...x, ...fields, isFinal: fields.response === "accepted" ? x.isFinal : false } : x,
+  );
   repaintCompanies();
   toast("Company updated.");
   enqueue(
@@ -485,9 +504,13 @@ function removeCompany(c) {
 
 // Tag toggles (location / applied / response): `fields` holds just the one thing that changed.
 function patchCompany(c, fields) {
-  const next = { ...c, ...fields };
+  const { final, ...rest } = fields;
+  const next = { ...c, ...rest };
+  if (final !== undefined) next.isFinal = final;
   if (!next.applied) next.response = "none"; // same rule the server applies
-  myCompanies = myCompanies.map((x) => (x.id === c.id ? next : x));
+  if (next.response !== "accepted") next.isFinal = false;
+  // there is only ever one final company
+  myCompanies = myCompanies.map((x) => (x.id === c.id ? next : final ? { ...x, isFinal: false } : x));
   repaintCompanies();
   enqueue(async () => {
     const id = serverId(c.id);

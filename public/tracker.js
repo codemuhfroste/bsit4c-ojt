@@ -136,7 +136,7 @@ export async function trackerView() {
   function companyCell(stu, col, base) {
     const co = stu.companies;
     const who = stu.fullName || stu.email;
-    const names = stu.companyList.map((c) => c.name).join(", ");
+    const names = stu.companyList.map((c) => (c.final ? `${c.name} (final)` : c.name)).join(", ");
     const td = h(
       "td",
       {
@@ -151,7 +151,7 @@ export async function trackerView() {
             { className: "co-badge ok" },
             h("i", {}, icon("check", 14)),
             h("b", {}, String(co.total)),
-            h("small", {}, "listed"),
+            h("small", {}, stu.companyList.find((c) => c.final)?.name ?? "listed"),
           ),
     );
     if (co.state !== "none") popFor.set(td, stu);
@@ -433,6 +433,7 @@ export async function trackerView() {
                 CO_LABEL[shade],
                 h("span", { className: "sep" }, "·"),
                 PLACE[c.location] ?? c.location,
+                c.final && h("span", { className: "pop-moa" }, icon("check", 11), "Final"),
                 c.moa && h("span", { className: "pop-moa" }, icon("shield", 11), "MoA"),
               ),
             );

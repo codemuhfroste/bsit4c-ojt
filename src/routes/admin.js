@@ -79,7 +79,7 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
   );
   const { rows: subs } = await db.execute("SELECT id, user_id, requirement_id, status, updated_at FROM submissions");
   const { rows: comps } = await db.execute(
-    "SELECT user_id, name, location, applied, response, moa, created_at FROM companies ORDER BY id",
+    "SELECT user_id, name, location, applied, response, moa, is_final, created_at FROM companies ORDER BY id",
   );
 
   const group = (rows) => {
@@ -120,6 +120,7 @@ router.get("/tracker", requireRole(...STAFF), async (_req, res) => {
           applied: Boolean(c.applied),
           response: c.response,
           moa: Boolean(c.moa),
+          final: Boolean(c.is_final),
         })),
         companies: {
           total: list.length,
@@ -191,7 +192,7 @@ router.get("/submissions", requireRole(...STAFF), async (req, res) => {
   const byUser = new Map();
   if (companyOwners.length) {
     const { rows: list } = await db.execute({
-      sql: `SELECT user_id, id, name, link, email, location, applied, response, moa FROM companies
+      sql: `SELECT user_id, id, name, link, email, location, applied, response, moa, is_final FROM companies
             WHERE user_id IN (${companyOwners.map(() => "?").join(",")}) ORDER BY id`,
       args: companyOwners,
     });
@@ -206,6 +207,7 @@ router.get("/submissions", requireRole(...STAFF), async (req, res) => {
         applied: Boolean(c.applied),
         response: c.response,
         moa: Boolean(c.moa),
+        isFinal: Boolean(c.is_final),
       };
       byUser.set(key, [...(byUser.get(key) ?? []), entry]);
     }
@@ -321,6 +323,7 @@ router.get("/export/companies.csv", requireRole(...STAFF), async (_req, res) => 
       "Applied",
       "Response",
       "MoA with BU",
+      "Final company",
       "Added",
     ],
     ...rows.map((c) => [
@@ -334,6 +337,7 @@ router.get("/export/companies.csv", requireRole(...STAFF), async (_req, res) => 
       c.applied ? "Yes" : "No",
       c.applied ? { none: "No response", accepted: "Accepted", denied: "Denied" }[c.response] : "",
       c.moa ? "Yes" : "No",
+      c.is_final ? "Yes" : "No",
       c.created_at,
     ]),
   ];
