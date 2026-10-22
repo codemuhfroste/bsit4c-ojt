@@ -1,13 +1,14 @@
-// Tracker: a grid for advisers and admins. One row per student, one column per required task, and a single Companies
-// column: a green check with the number of companies the student has listed, or "Missing" if none yet. Hover (or focus)
-// that cell to see the companies by name. The Excel export still lists each company name.
+// Tracker: a grid for advisers and admins. One row per student, one column per required task, and a single Company
+// column holding the student's FINAL company, which only counts once that company has accepted them. Until then the cell
+// says why: nothing listed, nobody accepted yet, or accepted by several with none chosen. Hover (or focus) the cell to
+// see every company the student listed. The Excel export still lists each company name.
 import { api, avatar, h, icon } from "/common.js";
 
 const RANK = { todo: 0, rejected: 1, submitted: 2, approved: 3 }; // sorting puts the most urgent first
 const LABEL = { approved: "Done", submitted: "In review", rejected: "Needs changes", todo: "Missing", na: "N/A" };
 const GLYPH = { approved: "check", submitted: "clock", rejected: "alert", todo: "minus", na: "minus" };
 const CO_LABEL = { accepted: "Accepted", denied: "Denied", applied: "Applied, no reply yet", idle: "Not applied yet" };
-const CO_RANK = { none: 0, ok: 1 }; // sorting puts the most urgent first
+const CO_RANK = { none: 0, waiting: 1, choose: 2, final: 3 }; // sorting puts the most urgent first
 
 // Kept between visits to the tab, so the adviser returns to the view they left.
 const state = { q: "", filter: "all", sortKey: "name", dir: 1, showNa: false };
@@ -28,9 +29,13 @@ function ago(s) {
 const coState = (c) =>
   c.response === "accepted" ? "accepted" : c.response === "denied" ? "denied" : c.applied ? "applied" : "idle";
 
-// Where a student stands on the company list. No adviser reviews it: listing a company is what counts.
+// Where a student stands on the company hunt. The final company is the one they chose among those that accepted them,
+// or simply the only one that accepted them; a company that has not accepted is never the final one.
 export function companyInfo(list) {
-  return { state: list.length ? "ok" : "none", total: list.length };
+  const accepted = list.filter((c) => c.response === "accepted");
+  const final = accepted.find((c) => c.final) ?? (accepted.length === 1 ? accepted[0] : null);
+  const state = !list.length ? "none" : final ? "final" : accepted.length > 1 ? "choose" : "waiting";
+  return { state, total: list.length, accepted, final };
 }
 
 // Adds what the grid needs to each student: status per requirement, what is missing, what awaits review.
@@ -49,13 +54,13 @@ function derive(data) {
 
 function columnsFor(data) {
   // Optional tasks (the resume) are left out of the grid, like the CSV.
-  // The "Find OJT companies" task and the company list are one thing to an adviser, so they share a single Companies
+  // The "Find OJT companies" task and the company hunt are one thing to an adviser, so they share a single Company
   // column, in the place that task occupies.
   const reqCols = data.requirements
     .filter((r) => !r.optional && (r.available || state.showNa))
     .map((req) =>
       req.kind === "companies"
-        ? { key: "companies", kind: "company", title: "Companies", sub: req.available ? "" : "N/A for now" }
+        ? { key: "companies", kind: "company", title: "Company", sub: req.available ? "" : "N/A for now" }
         : { key: `r${req.id}`, kind: "req", req, title: req.title, sub: req.available ? "" : "N/A for now" },
     );
   return [...reqCols, { key: "activity", kind: "time", title: "Last activity" }];
@@ -73,7 +78,7 @@ export async function trackerView() {
   const table = h("table", { className: "sheet", role: "grid", "aria-label": "Student requirements tracker" });
   const wrap = h("div", { className: "sheet-wrap", tabindex: "-1" }, table);
   const pop = h("div", { className: "pop", role: "presentation", hidden: true }); // each cell's aria-label says it all
-  const popFor = new WeakMap(); // Companies cell -> its student
+  const popFor = new WeakMap(); // Company cell -> its student
 
   // ---------- rendering ----------
 
@@ -127,11 +132,16 @@ export async function trackerView() {
     );
   }
 
-  // The Companies cell is a single glance: a check with how many companies the student listed. Hovering or focusing it
-  // opens the popover below with their names.
+  // The Company cell is a single glance: the final company, or what is still missing. Hovering or focusing it opens the
+  // popover below with every company the student listed.
   const sentence = (n) => `${n} compan${n === 1 ? "y" : "ies"}`;
   const companySentence = (co) =>
-    co.state === "none" ? "missing, no companies listed" : `${sentence(co.total)} listed`;
+    ({
+      none: "missing, no company listed",
+      waiting: `${sentence(co.total)} listed, none has accepted yet`,
+      choose: `accepted by ${co.accepted.length} companies, final company not chosen yet`,
+      final: `final company ${co.final?.name}, accepted`,
+    })[co.state];
 
   function companyCell(stu, col, base) {
     const co = stu.companies;
@@ -146,13 +156,28 @@ export async function trackerView() {
       },
       co.state === "none"
         ? h("span", { className: "badge todo" }, icon(GLYPH.todo, 13), LABEL.todo)
-        : h(
-            "span",
-            { className: "co-badge ok" },
-            h("i", {}, icon("check", 14)),
-            h("b", {}, String(co.total)),
-            h("small", {}, stu.companyList.find((c) => c.final)?.name ?? "listed"),
-          ),
+        : co.state === "final"
+          ? h(
+              "span",
+              { className: "co-badge final", title: co.final.name },
+              h("i", {}, icon("check", 14)),
+              h("b", { className: "co-name" }, co.final.name),
+            )
+          : co.state === "choose"
+            ? h(
+                "span",
+                { className: "co-badge choose" },
+                h("i", {}, icon("clock", 14)),
+                h("b", {}, `${co.accepted.length} accepted`),
+                h("small", {}, "none chosen"),
+              )
+            : h(
+                "span",
+                { className: "co-badge waiting" },
+                h("i", {}, icon("minus", 14)),
+                h("b", {}, String(co.total)),
+                h("small", {}, "listed, none accepted"),
+              ),
     );
     if (co.state !== "none") popFor.set(td, stu);
     return td;
@@ -252,14 +277,16 @@ export async function trackerView() {
           ),
         );
       } else if (col.kind === "company") {
-        const ok = rows.filter((s) => s.companies.state === "ok").length;
+        const count = (state) => rows.filter((s) => s.companies.state === state).length;
+        const [final, choose, waiting] = [count("final"), count("choose"), count("waiting")];
+        const none = rows.length - final - choose - waiting;
         tr.append(
           tallyCell(
-            ok,
-            0,
-            rows.length - ok,
+            final,
+            choose + waiting,
+            none,
             rows.length,
-            `${ok} with companies listed · ${rows.length - ok} with none yet`,
+            `${final} with a final company · ${choose} accepted but none chosen · ${waiting} waiting for an acceptance · ${none} with no company listed`,
           ),
         );
       } else {
@@ -396,7 +423,7 @@ export async function trackerView() {
   }
 
   // ---------- company popover ----------
-  // One floating panel shared by every Companies cell. It is `position: fixed`, so the scrolling grid cannot clip it.
+  // One floating panel shared by every Company cell. It is `position: fixed`, so the scrolling grid cannot clip it.
 
   const PLACE = { inside: "Inside Legazpi", outside: "Outside Legazpi" };
   const POP_MAX = 8;
@@ -406,15 +433,24 @@ export async function trackerView() {
     if (!stu) return hidePop();
     const co = stu.companies;
     const shown = stu.companyList;
-    const title = `${sentence(co.total)} listed`;
+    const title =
+      co.state === "final"
+        ? `Final company: ${co.final.name}`
+        : co.state === "choose"
+          ? `Accepted by ${co.accepted.length}, none chosen yet`
+          : `${sentence(co.total)} listed, none accepted yet`;
 
-    pop.className = "pop ok";
+    pop.className = `pop ${co.state}`;
     pop.replaceChildren(
       ...[
         h(
           "div",
           { className: "pop-head" },
-          h("span", { className: "co-badge ok" }, h("i", {}, icon("check", 14))),
+          h(
+            "span",
+            { className: `co-badge ${co.state}` },
+            h("i", {}, icon(co.state === "final" ? "check" : co.state === "choose" ? "clock" : "minus", 14)),
+          ),
           h("div", {}, h("b", {}, title), h("small", {}, stu.fullName || stu.email)),
         ),
         h(
@@ -528,8 +564,13 @@ export async function trackerView() {
       h("span", { className: `legend-item ${s}` }, icon(GLYPH[s], 12), LABEL[s]),
     ),
     h("span", { className: "legend-sep" }),
-    h("span", { className: "legend-item co-ok" }, icon("check", 12), "Companies listed"),
-    h("span", { className: "muted hint" }, "Hover a Companies cell for the names · Enter opens a student"),
+    h("span", { className: "legend-item co-ok" }, icon("check", 12), "Final company (accepted)"),
+    h("span", { className: "legend-item submitted" }, icon("clock", 12), "Accepted by several, none chosen"),
+    h(
+      "span",
+      { className: "muted hint" },
+      "Hover a Company cell to see every company they listed · Enter opens a student",
+    ),
   );
 
   root.append(

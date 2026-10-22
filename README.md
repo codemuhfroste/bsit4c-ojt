@@ -43,8 +43,10 @@ The coordinator's first two tasks are open; every other requirement is shown cro
    as soon as one company is added (and goes back to to-do if the list is emptied), and students can keep adding,
    editing or removing companies at any time. Advisers see the list on the student's page and in the Tracker. A student
    accepted by **more than one** company picks the **final company** with the **Make final** button on one of the
-   accepted companies (only an accepted company can be final, and there is only ever one); the roadmap, the student's
-   page and the Tracker show which it is.
+   accepted companies (only an accepted company can be final, and there is only ever one). Once a student has a final
+   company (chosen, or the only one that accepted them) their Checklist gets a **Final company** section at the top
+   of the tasks, and the company list is struck through and tucked away to cut the clutter. The roadmap, the
+   student's page and the Tracker show the final company too.
 2. **Resume / CV** – a PDF or image upload. It is **optional**: students can submit it, but it does not count toward
    their progress.
 
@@ -78,14 +80,16 @@ has an **Optional** checkbox for tasks that should not count toward progress.
   student, ID or requirement. Click a student's name to jump to their page.
 - **Tracker tab** – a full-screen grid for monitoring the whole class: one row per student (admins are listed too).
   Columns are the open required tasks (**Done**, **In review**, **Needs changes**, outlined red **Missing**), a single
-  **Companies** column, and **Last activity**. The Companies cell shows a **green check** with how many companies the
-  student has listed, or **Missing** if none yet. **Hover (or focus) the cell** to see the companies by name, with
-  whether the student applied and the company's answer. The header and student column stay in view while you scroll,
-  and a totals row is pinned at the bottom. Click a header to sort (most urgent first), filter by _Has missing work /
-  Waiting for review / Complete_, search by student, ID, email **or company name**, and tick **Show N/A tasks** to
-  include the closed requirements. **Export to Excel (CSV)** lists every company name in its own column (Name, Student
-  ID, Email, task statuses, Required approved, Company 1…N). Arrow keys move between cells; Enter or double-click opens
-  the student. It refreshes itself every minute.
+  **Company** column, and **Last activity**. The Company cell holds the student's **final company**, and only a
+  company that has **accepted** the student can be it (a student accepted by just one company has that one as final;
+  with several they choose). Until there is one the cell says why: **Missing** (nothing listed), **n listed, none
+  accepted**, or **n accepted, none chosen**. **Hover (or focus) the cell** to see every company they listed, with
+  whether they applied, the company's answer and which is final. The header and student column stay in view while you
+  scroll, and a totals row is pinned at the bottom. Click a header to sort (most urgent first), filter by _Has missing
+  work / Waiting for review / Complete_, search by student, ID, email **or company name**, and tick **Show N/A tasks** to
+  include the closed requirements. **Export to Excel (CSV)** still lists every company name in its own column (Name,
+  Student ID, Email, task statuses, Required approved, Company 1…N). Arrow keys move between cells; Enter or
+  double-click opens the student. It refreshes itself every minute.
 - **Overview tab** (advisers) – class totals, the students who have no company yet, and how far the company hunt
   has got (accepted by a company, applied and waiting, listed, nothing listed).
 - **MoA with BU** – advisers (not students) can flag a company as having a Memorandum of Agreement with the

@@ -26,6 +26,12 @@ const STATUS = {
 // Closed requirements ("N/A for now") are shown crossed out and cannot be submitted.
 const statusOf = (item) => (!item.available ? "na" : (item.submission?.status ?? "todo"));
 const LOCATION = { inside: "Inside Legazpi", outside: "Outside Legazpi" };
+// The student's final company: the one they chose among those that accepted them, or the only one that accepted them. A
+// company that has not accepted is never the final one.
+const finalCompanyOf = (list) => {
+  const accepted = list.filter((c) => c.response === "accepted");
+  return accepted.find((c) => c.isFinal) ?? (accepted.length === 1 ? accepted[0] : null);
+};
 const companyCount = (n) => `${n} ${n === 1 ? "company" : "companies"}`;
 
 // "https://www.facebook.com/acme/" -> "facebook.com/acme"
@@ -307,9 +313,10 @@ function companyTags(c, patch, staff = false) {
 }
 
 function buildCompanyRow(c, { patch, actions = [], staff = false }) {
+  const final = staff ? null : finalCompanyOf(myCompanies);
   return h(
     "li",
-    {},
+    { className: final && final.id !== c.id ? "other" : "" },
     h(
       "div",
       { className: "grow" },
@@ -504,6 +511,7 @@ function removeCompany(c) {
 
 // Tag toggles (location / applied / response): `fields` holds just the one thing that changed.
 function patchCompany(c, fields) {
+  const finalBefore = finalCompanyOf(myCompanies)?.id;
   const { final, ...rest } = fields;
   const next = { ...c, ...rest };
   if (final !== undefined) next.isFinal = final;
@@ -512,10 +520,14 @@ function patchCompany(c, fields) {
   // there is only ever one final company
   myCompanies = myCompanies.map((x) => (x.id === c.id ? next : final ? { ...x, isFinal: false } : x));
   repaintCompanies();
-  enqueue(async () => {
-    const id = serverId(c.id);
-    if (typeof id === "number") await api("PATCH", `/api/companies/${id}`, fields);
-  });
+  enqueue(
+    async () => {
+      const id = serverId(c.id);
+      if (typeof id === "number") await api("PATCH", `/api/companies/${id}`, fields);
+    },
+    // the Final company section and the strike-through follow it, so the page redraws when it changes
+    { refresh: finalCompanyOf(myCompanies)?.id !== finalBefore },
+  );
 }
 
 function companyPanel(editing, close) {
@@ -691,7 +703,13 @@ function activity(item) {
   const na = status === "na";
   const isCompanies = item.kind === "companies";
   const locked = status === "approved";
-  const li = h("li", { className: `activity${na ? " na" : ""}`, id: `req-${item.id}`, "data-status": status });
+  // With a final company the list is no longer what the student works from, so it is struck through and tucked away.
+  const settled = isCompanies && !na && Boolean(finalCompanyOf(myCompanies));
+  const li = h("li", {
+    className: `activity${na ? " na" : ""}${settled ? " settled" : ""}`,
+    id: `req-${item.id}`,
+    "data-status": status,
+  });
   let panel = null;
 
   const dismissPanel = () => {
@@ -749,6 +767,15 @@ function activity(item) {
   let metaEl = buildMeta();
   let listEl = isCompanies && !na ? buildList() : null;
   if (listEl) repaintCompanies = repaint;
+  const listBlock =
+    listEl && settled
+      ? h(
+          "details",
+          { className: "other-companies" },
+          h("summary", {}, `Your company list (${myCompanies.length})`),
+          listEl,
+        )
+      : listEl;
 
   function repaint() {
     // Keep keyboard focus on the same tag after the rows are rebuilt.
@@ -856,7 +883,7 @@ function activity(item) {
       item.description && h("p", { className: "desc" }, item.description),
       templateLinks(item),
       metaEl,
-      listEl,
+      listBlock,
       sub?.note && h("div", { className: `callout ${status}` }, h("b", {}, "Reviewer: "), sub.note),
     ),
     side,
@@ -934,6 +961,46 @@ async function checklistView() {
     ),
   );
 
+  // The final company gets a section of its own at the top of the tasks.
+  const finalCompany = finalCompanyOf(myCompanies);
+  const companyTask = items.find((i) => i.kind === "companies");
+  const finalCard =
+    finalCompany &&
+    h(
+      "section",
+      { className: "card final-company", id: "final-company", "aria-labelledby": "final-company-title" },
+      h(
+        "div",
+        { className: "fc-head" },
+        h("div", { className: "act-icon" }, icon("building", 22)),
+        h("div", {}, h("small", {}, "Your final company"), h("h2", { id: "final-company-title" }, finalCompany.name)),
+      ),
+      h(
+        "div",
+        { className: "fc-body" },
+        finalCompany.link
+          ? h(
+              "a",
+              { href: finalCompany.link, target: "_blank", rel: "noopener noreferrer" },
+              icon("link", 13),
+              prettyLink(finalCompany.link),
+            )
+          : null,
+        finalCompany.email
+          ? h("a", { href: `mailto:${encodeURIComponent(finalCompany.email)}` }, icon("mail", 13), finalCompany.email)
+          : null,
+        companyTags({ ...finalCompany, isFinal: false }),
+      ),
+      h("p", { className: "fc-note" }, "Your MoA and the other forms below are for this company."),
+      myCompanies.filter((c) => c.response === "accepted").length > 1 &&
+        companyTask &&
+        h(
+          "button",
+          { type: "button", className: "btn link", onclick: () => go(companyTask.id) },
+          "Change final company",
+        ),
+    );
+
   const chips = h(
     "div",
     { className: "chips", role: "group", "aria-label": "Filter requirements" },
@@ -1010,6 +1077,7 @@ async function checklistView() {
       h(
         "div",
         {},
+        finalCard,
         chips,
         ...(sections.length
           ? sections
