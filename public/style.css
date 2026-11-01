@@ -2791,6 +2791,52 @@ table.sheet {
 .group-note svg {
   margin-top: 3px;
 }
+.partner-box {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  font-size: 0.86rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.partner-box p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+.partner-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.partner-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  font-weight: 600;
+  background: var(--primary-soft);
+  border-radius: 999px;
+}
+.partner-list .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+.partner-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.partner-add select {
+  flex: 1 1 220px;
+  width: auto;
+  max-width: 320px;
+  padding: 7px 10px;
+}
 .task-help {
   display: grid;
   gap: 6px;

@@ -7,6 +7,7 @@ import { ensureMigrated } from "./db.js";
 import adminRoutes from "./routes/admin.js";
 import authRoutes from "./routes/auth.js";
 import checklistRoutes from "./routes/checklist.js";
+import partnerRoutes from "./routes/partners.js";
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -57,6 +58,7 @@ export function createApp() {
 
   app.use("/api", authRoutes);
   app.use("/api", checklistRoutes);
+  app.use("/api", partnerRoutes);
   app.use("/api/admin", adminRoutes);
   app.use("/api", (_req, _res, next) => next(new HttpError(404, "Not found.")));
 

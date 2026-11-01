@@ -261,10 +261,17 @@ router.get("/users/:id", requireRole(...STAFF), async (req, res) => {
     sql: "SELECT * FROM companies WHERE user_id = ? ORDER BY id",
     args: [id],
   });
+  const { rows: partners } = await db.execute({
+    sql: `SELECT u.id, u.full_name, u.email FROM partners p JOIN users u ON u.id = p.partner_id
+          WHERE p.user_id = ? ORDER BY u.full_name`,
+    args: [id],
+  });
   res.json({
     user: publicUser(rows[0]),
     ...(await loadChecklist(id, { staff: true })),
     companies: companies.map(shapeCompany),
+    // who the student says they work with (their MoA is linked to these students)
+    partners: partners.map((p) => ({ id: Number(p.id), name: p.full_name || p.email })),
   });
 });
 

@@ -92,8 +92,14 @@ has an **Optional** checkbox for tasks that should not count toward progress.
   double-click opens the student. It refreshes itself every minute.
 - **Overview tab** (advisers) – class totals, the students who have no company yet, and how far the company hunt
   has got (accepted by a company, applied and waiting, listed, nothing listed).
-- **Groups and the MoA** – students who apply to the same company as a group only need one MoA between them. Two
-  students count as groupmates when their **final companies** (accepted ones only) have the same name word for word, or
+- **MoA partners** – on the Memorandum of Agreement task a student answers **Who are you working with?** with a dropdown
+  of every registered student (names only; advisers are not in the list) and adds them as a **partner**. The link is
+  stored both ways (`partners` table, `GET/POST /api/partners`, `DELETE /api/partners/:id`), can chain (A with B, B with
+  C), and either side can remove it. When anyone linked submits the MoA it covers all of them, whatever their companies
+  are called, and the adviser sees whose MoA it is and who each student says they work with. The Privacy Notice says
+  that names appear in this list, so its version was bumped and everyone accepts it once more.
+- **Groups and the MoA** – even without a link, students who apply to the same company as a group only need one MoA
+  between them. Two students count as groupmates when their **final companies** (accepted ones only) have the same name word for word, or
   one word different (`src/company-names.js`: case, punctuation and "Inc." are ignored, one typo or plural is fine, one
   extra word is fine, and one different word is fine only in names of four words or more; the first word, the
   company's name, must always match). When one of them submits the MoA the others show it as **Submitted by groupmate**

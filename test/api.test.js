@@ -605,6 +605,70 @@ describe("current tasks", () => {
     assert.equal(own.status, "submitted");
   });
 
+  test("MoA partners: pick classmates from a list, the link works both ways, and one MoA covers everyone linked", async () => {
+    const admin = await adminClient();
+    const [a, b, c] = [
+      await registerAndVerify("partner-a@example.com"),
+      await registerAndVerify("partner-b@example.com"),
+      await registerAndVerify("partner-c@example.com"),
+    ];
+    const adviser = await registerAndVerify("partner-adviser@example.com");
+    const idOf = async (x) => (await x("GET", "/api/me")).body.user.id;
+    const [aId, bId, cId, adviserId] = [await idOf(a), await idOf(b), await idOf(c), await idOf(adviser)];
+    await admin("PATCH", `/api/admin/users/${adviserId}/role`, { json: { role: "adviser" } });
+
+    // The list holds every registered student but me, as names only (these three share a name, so the ID tells them apart).
+    const list = (await a("GET", "/api/partners")).body;
+    assert.ok(list.students.every((s) => Object.keys(s).sort().join() === "id,name"));
+    assert.ok(!list.students.some((s) => s.id === aId));
+    assert.ok(list.students.some((s) => s.id === bId && /ID …/.test(s.name)));
+    assert.ok(!list.students.some((s) => s.id === adviserId), "advisers are not in the class");
+    assert.deepEqual(list.partners, []);
+
+    // Who can use it, and what it accepts.
+    assert.equal((await client()("GET", "/api/partners")).status, 401);
+    assert.equal((await adviser("GET", "/api/partners")).status, 403);
+    const add = (who, partnerId) => who("POST", "/api/partners", { json: { partnerId } });
+    assert.equal((await add(a, aId)).status, 400); // not yourself
+    assert.equal((await add(a, "x")).status, 404); // not an id
+    assert.equal((await add(a, 999999)).status, 404);
+    assert.equal((await add(a, adviserId)).status, 404); // advisers cannot be partners
+
+    // A link reads the same from both sides, and adding it twice changes nothing.
+    assert.equal((await add(a, bId)).status, 201);
+    assert.equal((await add(a, bId)).status, 201);
+    assert.deepEqual(
+      (await a("GET", "/api/partners")).body.partners.map((p) => p.id),
+      [bId],
+    );
+    assert.deepEqual(
+      (await b("GET", "/api/partners")).body.partners.map((p) => p.id),
+      [aId],
+    );
+    assert.equal((await add(b, cId)).status, 201); // chains: a with b, b with c
+
+    // One MoA covers everyone linked, whatever their companies are called.
+    const moaOf = async (x) =>
+      (await x("GET", "/api/requirements")).body.items.find((i) => /^Memorandum/.test(i.title));
+    const moaId = (await moaOf(a)).id;
+    assert.equal((await moaOf(b)).submission, null);
+    assert.equal((await a("POST", `/api/requirements/${moaId}/submit`, { form: upload(pdf("moa")) })).status, 200);
+    for (const x of [b, c]) {
+      const covered = (await moaOf(x)).submission;
+      assert.deepEqual([covered.viaGroup, covered.status], [true, "submitted"]);
+    }
+    const asStaff = (await admin("GET", `/api/admin/users/${bId}`)).body;
+    assert.equal(asStaff.items.find((i) => i.id === moaId).submission.groupmate, "Test User");
+    assert.deepEqual(asStaff.partners.map((p) => p.id).sort(), [aId, cId].sort()); // who they work with, for the adviser
+
+    // Removing a link takes the cover away from the side that depended on it.
+    assert.equal((await b("DELETE", `/api/partners/${aId}`)).status, 200);
+    assert.equal((await moaOf(b)).submission, null);
+    assert.equal((await moaOf(c)).submission, null); // c was only linked through b
+    assert.equal((await b("DELETE", `/api/partners/${aId}`)).status, 404); // already gone
+    assert.deepEqual((await a("GET", "/api/partners")).body.partners, []);
+  });
+
   test("company website is optional", async () => {
     const student = await registerAndVerify("nolink@example.com");
     const post = (body) => student("POST", "/api/companies", { json: { email: "N/A", location: "inside", ...body } });

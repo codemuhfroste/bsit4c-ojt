@@ -47,6 +47,81 @@ function prettyLink(href) {
 let myCompanies = [];
 const pill = (status, small = true) =>
   h("span", { className: `pill ${status}` }, icon(STATUS[status].icon, small ? 13 : 15), STATUS[status].label);
+// Who the student can pick as a MoA partner, and who they picked (null when the MoA task is not open).
+let partnerData = null;
+
+// "Who are you working with?": a dropdown of every registered student. Picking one links the two MoAs, so one
+// submission covers both of them.
+function partnerPanel() {
+  const { partners, students } = partnerData;
+  const free = students.filter((s) => !partners.some((p) => p.id === s.id));
+  const select = h(
+    "select",
+    { "aria-label": "Choose a classmate you are working with" },
+    h("option", { value: "" }, "Choose a classmate…"),
+    ...free.map((s) => h("option", { value: String(s.id) }, s.name)),
+  );
+  const add = h(
+    "button",
+    {
+      type: "button",
+      className: "btn sm",
+      onclick: (e) => {
+        if (!select.value) return toast("Choose a classmate first.", "err");
+        return run(e.currentTarget, async () => {
+          await api("POST", "/api/partners", { partnerId: Number(select.value) });
+          toast("Partner added.");
+          await render();
+        });
+      },
+    },
+    icon("plus", 15),
+    "Add partner",
+  );
+  return h(
+    "div",
+    { className: "partner-box" },
+    h("b", {}, "Who are you working with?"),
+    h(
+      "p",
+      {},
+      partners.length
+        ? "Your MoA is linked to them: when one of you submits it, it covers all of you."
+        : "Applying with classmates? Choose them here, so one MoA covers all of you. Working alone? Leave this empty.",
+    ),
+    partners.length > 0 &&
+      h(
+        "ul",
+        { className: "partner-list" },
+        ...partners.map((p) =>
+          h(
+            "li",
+            {},
+            icon("users", 14),
+            h("span", {}, p.name),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "icon-btn plain sm",
+                "aria-label": `Remove ${p.name} as a partner`,
+                title: "Remove",
+                onclick: (e) =>
+                  run(e.currentTarget, async () => {
+                    await api("DELETE", `/api/partners/${p.id}`);
+                    toast("Partner removed.");
+                    await render();
+                  }),
+              },
+              icon("x", 14),
+            ),
+          ),
+        ),
+      ),
+    h("div", { className: "partner-add" }, select, add),
+  );
+}
+
 // A task covered by a groupmate's submission (same final company, or nearly): not the student's own file.
 const groupPill = (status, small = true) =>
   h(
@@ -902,13 +977,14 @@ function activity(item) {
       h("h3", {}, item.title),
       item.description && h("p", { className: "desc" }, item.description),
       taskHelp(item),
+      partnerData && /^memorandum of agreement/i.test(item.title) ? partnerPanel() : null,
       templateLinks(item),
       sub?.viaGroup &&
         h(
           "p",
           { className: "group-note" },
           icon("users", 14),
-          "A groupmate who applied to the same company already submitted the MoA, and it covers you too. You do not need to upload it.",
+          "A groupmate already submitted the MoA, and it covers you too. You do not need to upload it.",
         ),
       metaEl,
       listBlock,
@@ -927,6 +1003,10 @@ async function checklistView() {
   myCompanies = mine.companies;
   // Tasks that are not open yet ("N/A for now") are hidden: crossed-out blocks only confused students.
   const items = everything.filter((i) => i.available);
+  // The partner list is only needed while the MoA task is open.
+  partnerData = items.some((i) => /^memorandum of agreement/i.test(i.title))
+    ? await api("GET", "/api/partners").catch(() => null)
+    : null;
   const count = (s) => items.filter((i) => statusOf(i) === s).length; // everything listed (filter chips)
   const counted = items.filter((i) => !i.optional); // optional items do not count toward progress
   const countRequired = (s) => counted.filter((i) => statusOf(i) === s).length;
@@ -1663,7 +1743,7 @@ async function reviewView() {
 
 // One student's whole checklist: every requirement, their files, their companies, with review controls.
 async function studentDetailView(id) {
-  const { user: u, items, progress, companies } = await api("GET", `/api/admin/users/${id}`);
+  const { user: u, items, progress, companies, partners } = await api("GET", `/api/admin/users/${id}`);
   const required = items.filter((i) => i.available && !i.optional);
   const inReview = required.filter((i) => statusOf(i) === "submitted").length;
   const todo = required.filter((i) => statusOf(i) === "todo").length;
@@ -1766,6 +1846,9 @@ async function studentDetailView(id) {
           sub?.viaGroup ? groupPill(status) : pill(status),
           item.optional && h("span", { className: "pill todo" }, "Optional"),
           sub?.viaGroup && h("span", { className: "muted" }, `Covered by ${sub.groupmate}'s MoA`),
+          /^memorandum of agreement/i.test(item.title) &&
+            partners.length > 0 &&
+            h("span", { className: "muted" }, `Working with: ${partners.map((p) => p.name).join(", ")}`),
           sub?.fileName && h("a", { href: `/api/submissions/${sub.id}/file` }, icon("download", 14), sub.fileName),
           sub && status !== "na" && h("span", { className: "muted" }, `Updated ${fmtDate(sub.updatedAt)}`),
         ),

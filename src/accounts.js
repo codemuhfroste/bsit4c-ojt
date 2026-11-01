@@ -7,6 +7,7 @@ export async function eraseUser(userId) {
     [
       { sql: "DELETE FROM companies WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM submissions WHERE user_id = ?", args: [userId] },
+      { sql: "DELETE FROM partners WHERE user_id = ? OR partner_id = ?", args: [userId, userId] },
       { sql: "DELETE FROM sessions WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM user_tokens WHERE user_id = ?", args: [userId] },
       // Reviews this person made stay on other students' records, but no longer point at them.

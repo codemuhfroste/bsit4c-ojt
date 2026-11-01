@@ -33,15 +33,43 @@ export async function moaViaGroup() {
     if (final) finals.set(userId, final.name);
   }
 
+  // Students who linked themselves as partners are covered by each other's MoA, whatever their companies are called.
+  // A link can chain (A with B, B with C), so a partner group is everyone reachable through links.
+  const { rows: links } = await db.execute("SELECT user_id, partner_id FROM partners");
+  const next = new Map();
+  for (const l of links) {
+    const a = Number(l.user_id);
+    next.set(a, [...(next.get(a) ?? []), Number(l.partner_id)]);
+  }
+  const better = (best, sub) => !best || (sub.status === "approved" && best.status !== "approved");
   const byUser = new Map();
+  for (const start of next.keys()) {
+    if (own.has(start)) continue;
+    const seen = new Set([start]);
+    const queue = [start];
+    let best = null;
+    while (queue.length) {
+      for (const other of next.get(queue.shift()) ?? []) {
+        if (seen.has(other)) continue;
+        seen.add(other);
+        queue.push(other);
+        const theirs = own.get(other);
+        if (theirs && ["submitted", "approved"].includes(theirs.status) && better(best, theirs)) {
+          best = { status: theirs.status, name: theirs.full_name || theirs.email, updatedAt: theirs.updated_at };
+        }
+      }
+    }
+    if (best) byUser.set(start, best);
+  }
+
   for (const [userId, name] of finals) {
-    if (own.has(userId)) continue;
+    if (own.has(userId) || byUser.has(userId)) continue;
     let best = null;
     for (const [otherId, otherName] of finals) {
       const theirs = own.get(otherId);
       if (otherId === userId || !theirs || !["submitted", "approved"].includes(theirs.status)) continue;
       if (!similarCompany(name, otherName)) continue;
-      if (!best || (theirs.status === "approved" && best.status !== "approved")) {
+      if (better(best, theirs)) {
         best = { status: theirs.status, name: theirs.full_name || theirs.email, updatedAt: theirs.updated_at };
       }
     }

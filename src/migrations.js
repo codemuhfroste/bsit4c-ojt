@@ -251,4 +251,16 @@ export const migrations = [
       ],
     },
   ],
+
+  // 17: MoA partners. A student picks who they are working with; the link is stored in both directions, so one MoA
+  // covers everyone who is linked.
+  [
+    `CREATE TABLE partners (
+      user_id    INTEGER NOT NULL,
+      partner_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, partner_id)
+    )`,
+    "CREATE INDEX partners_partner_idx ON partners (partner_id)",
+  ],
 ];
